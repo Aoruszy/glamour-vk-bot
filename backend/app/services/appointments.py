@@ -241,7 +241,11 @@ def create_appointment(db: Session, payload: AppointmentCreate) -> Appointment:
     db.add(appointment)
     db.flush()
 
-    refresh_appointment_notifications(db, appointment)
+    refresh_appointment_notifications(
+        db,
+        appointment,
+        include_confirmation=payload.created_by != ActorRole.CLIENT,
+    )
     log_action(
         db,
         user_role=payload.created_by,
@@ -272,12 +276,13 @@ def cancel_appointment(
     if reason:
         appointment.comment = f"{appointment.comment or ''}\nПричина отмены: {reason}".strip()
 
-    append_status_notification(
-        db,
-        appointment_id=appointment.id,
-        notification_type=NotificationType.CANCELLATION,
-        message="Запись была отменена.",
-    )
+    if actor_role != ActorRole.CLIENT:
+        append_status_notification(
+            db,
+            appointment_id=appointment.id,
+            notification_type=NotificationType.CANCELLATION,
+            message="Запись была отменена.",
+        )
     log_action(
         db,
         user_role=actor_role,
@@ -322,7 +327,7 @@ def reschedule_appointment(db: Session, *, appointment: Appointment, payload: Ap
     if payload.comment:
         appointment.comment = payload.comment
 
-    refresh_appointment_notifications(db, appointment)
+    refresh_appointment_notifications(db, appointment, include_confirmation=False)
     append_status_notification(
         db,
         appointment_id=appointment.id,

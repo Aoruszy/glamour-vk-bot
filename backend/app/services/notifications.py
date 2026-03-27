@@ -30,20 +30,27 @@ def _appointment_status_label(status: str) -> str:
     return labels.get(status, status)
 
 
-def refresh_appointment_notifications(db: Session, appointment: Appointment) -> None:
+def refresh_appointment_notifications(
+    db: Session,
+    appointment: Appointment,
+    *,
+    include_confirmation: bool = True,
+) -> None:
     db.execute(delete(Notification).where(Notification.appointment_id == appointment.id))
 
     start_dt = datetime.combine(appointment.appointment_date, appointment.start_time)
     now = datetime.utcnow()
-    notifications: list[Notification] = [
-        Notification(
-            appointment_id=appointment.id,
-            type=NotificationType.BOOKING_CONFIRMATION,
-            send_at=now,
-            status=NotificationStatus.PENDING,
-            message="Запись создана и подтверждена.",
+    notifications: list[Notification] = []
+    if include_confirmation:
+        notifications.append(
+            Notification(
+                appointment_id=appointment.id,
+                type=NotificationType.BOOKING_CONFIRMATION,
+                send_at=now,
+                status=NotificationStatus.PENDING,
+                message="?????? ??????? ? ????????????.",
+            )
         )
-    ]
 
     reminder_24h_at = start_dt - timedelta(hours=24)
     if reminder_24h_at > now:
@@ -53,7 +60,7 @@ def refresh_appointment_notifications(db: Session, appointment: Appointment) -> 
                 type=NotificationType.REMINDER_24H,
                 send_at=reminder_24h_at,
                 status=NotificationStatus.PENDING,
-                message="Напоминание о записи за 24 часа.",
+                message="??????????? ? ?????? ?? 24 ????.",
             )
         )
 
@@ -65,7 +72,7 @@ def refresh_appointment_notifications(db: Session, appointment: Appointment) -> 
                 type=NotificationType.REMINDER_2H,
                 send_at=reminder_2h_at,
                 status=NotificationStatus.PENDING,
-                message="Напоминание о записи за 2 часа.",
+                message="??????????? ? ?????? ?? 2 ????.",
             )
         )
 

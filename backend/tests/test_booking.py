@@ -7,13 +7,13 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.core.enums import ActorRole
-from app.core.enums import NotificationStatus
+from app.core.enums import NotificationStatus, NotificationType
 from app.models.notification import Notification
 from app.schemas.appointment import AppointmentCreate, AppointmentStatusUpdate
 from app.api.routes.masters import delete_master
 from app.api.routes.services import delete_service, delete_service_category
 from app.services import appointments as appointments_service
-from app.services.appointments import create_appointment, get_available_slots
+from app.services.appointments import cancel_appointment, create_appointment, get_available_slots
 from app.services.appointments import update_appointment_status
 from app.services.notifications import process_due_notifications
 
@@ -58,12 +58,19 @@ def test_create_appointment_accepts_vk_user_id(db_session, seeded_booking_data) 
             service_id=service.id,
             appointment_date=work_date,
             start_time=time(10, 0),
-            created_by=ActorRole.ADMIN,
+            created_by=ActorRole.CLIENT,
         ),
     )
 
     assert appointment.client_id == client.id
     assert appointment.client_vk_user_id == client.vk_user_id
+
+    notifications = list(
+        db_session.scalars(
+            select(Notification).where(Notification.appointment_id == appointment.id)
+        )
+    )
+    assert all(notification.type != NotificationType.BOOKING_CONFIRMATION for notification in notifications)
 
 
 def test_available_slots_exclude_taken_time(db_session, seeded_booking_data) -> None:
@@ -235,6 +242,64 @@ def test_update_appointment_status_marks_visit_completed(db_session, seeded_book
     )
 
     assert updated.status.value == "completed"
+
+
+def test_reschedule_keeps_reminders_without_second_confirmation(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=seeded_booking_data["work_date"],
+            start_time=time(10, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    rescheduled = appointments_service.reschedule_appointment(
+        db_session,
+        appointment=appointment,
+        payload=appointments_service.AppointmentReschedule(
+            appointment_date=seeded_booking_data["work_date"],
+            start_time=time(12, 0),
+            actor_role=ActorRole.ADMIN,
+        ),
+    )
+
+    notifications = list(
+        db_session.scalars(select(Notification).where(Notification.appointment_id == rescheduled.id))
+    )
+    assert sum(notification.type == NotificationType.BOOKING_CONFIRMATION for notification in notifications) == 0
+    assert any(notification.type == NotificationType.RESCHEDULE for notification in notifications)
+
+
+def test_client_cancel_does_not_duplicate_bot_confirmation(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=seeded_booking_data["work_date"],
+            start_time=time(10, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    canceled = cancel_appointment(
+        db_session,
+        appointment=appointment,
+        actor_role=ActorRole.CLIENT,
+        reason="Canceled from VK bot",
+    )
+
+    notifications = list(
+        db_session.scalars(select(Notification).where(Notification.appointment_id == canceled.id))
+    )
+    assert all(notification.type != NotificationType.CANCELLATION for notification in notifications)
 
 
 def test_delete_service_rejects_service_used_in_appointments(db_session, seeded_booking_data) -> None:
