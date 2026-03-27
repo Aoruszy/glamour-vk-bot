@@ -99,6 +99,7 @@ export default function App() {
     price: "1500.00"
   });
   const [masterForm, setMasterForm] = useState({
+    category_id: "",
     full_name: "",
     specialization: "",
     phone: "",
@@ -325,6 +326,9 @@ export default function App() {
   const appointmentMasters = appointmentForm.service_id
     ? snapshot.masters.filter((master) => master.service_ids.includes(Number(appointmentForm.service_id)))
     : snapshot.masters;
+  const masterCategoryServices = masterForm.category_id
+    ? snapshot.services.filter((service) => service.category_id === Number(masterForm.category_id))
+    : [];
   const todayIso = new Date().toISOString().slice(0, 10);
 
   const clientLabel = (appointment: Appointment) =>
@@ -354,6 +358,7 @@ export default function App() {
   };
   const resetMasterForm = () => {
     setMasterForm({
+      category_id: "",
       full_name: "",
       specialization: "",
       phone: "",
@@ -759,7 +764,9 @@ export default function App() {
                           return;
                         }
                         setEditingMasterId(master.id);
+                        const masterServices = snapshot.services.filter((service) => master.service_ids.includes(service.id));
                         setMasterForm({
+                          category_id: masterServices[0] ? String(masterServices[0].category_id) : "",
                           full_name: master.full_name,
                           specialization: master.specialization || "",
                           phone: master.phone || "",
@@ -780,7 +787,8 @@ export default function App() {
                   <label><span>Специализация</span><input value={masterForm.specialization} onChange={(event) => setMasterForm((current) => ({ ...current, specialization: event.target.value }))} /></label>
                   <label><span>Телефон</span><input value={masterForm.phone} onChange={(event) => setMasterForm((current) => ({ ...current, phone: event.target.value }))} /></label>
                   <label><span>Стаж, лет</span><input type="number" value={masterForm.experience_years} onChange={(event) => setMasterForm((current) => ({ ...current, experience_years: event.target.value }))} /></label>
-                  <label className="full-width"><span>Услуги мастера</span><select multiple value={masterForm.service_ids.map(String)} onChange={(event) => setMasterForm((current) => ({ ...current, service_ids: Array.from(event.target.selectedOptions).map((option) => Number(option.value)) }))}>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+                  <label><span>Категория мастера</span><select value={masterForm.category_id} onChange={(event) => setMasterForm((current) => ({ ...current, category_id: event.target.value, service_ids: current.service_ids.filter((serviceId) => snapshot.services.some((service) => service.id === serviceId && service.category_id === Number(event.target.value))) }))}><option value="">Выберите категорию</option>{snapshot.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                  <label className="full-width"><span>Услуги мастера</span><select multiple value={masterForm.service_ids.map(String)} onChange={(event) => setMasterForm((current) => ({ ...current, service_ids: Array.from(event.target.selectedOptions).map((option) => Number(option.value)) }))} disabled={!masterForm.category_id}>{masterCategoryServices.length === 0 ? <option value="">Сначала выберите категорию</option> : null}{masterCategoryServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
                   {editingMasterId !== null ? <button className="button ghost full-width" type="button" onClick={resetMasterForm}>Отменить редактирование</button> : null}
                   <button className="button primary full-width" type="submit">{editingMasterId !== null ? "Сохранить мастера" : "Добавить мастера"}</button>
                 </form>
