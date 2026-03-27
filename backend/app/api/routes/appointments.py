@@ -31,6 +31,7 @@ def list_appointments(
     appointment_date: date | None = Query(default=None),
     master_id: int | None = Query(default=None),
     client_id: int | None = Query(default=None),
+    vk_user_id: int | None = Query(default=None),
     status_filter: str | None = Query(default=None, alias="status"),
     db: Session = Depends(get_db),
 ) -> list[Appointment]:
@@ -41,6 +42,11 @@ def list_appointments(
         stmt = stmt.where(Appointment.master_id == master_id)
     if client_id is not None:
         stmt = stmt.where(Appointment.client_id == client_id)
+    if vk_user_id is not None:
+        client = db.scalar(select(Client).where(Client.vk_user_id == vk_user_id))
+        if not client:
+            return []
+        stmt = stmt.where(Appointment.client_id == client.id)
     if status_filter is not None:
         stmt = stmt.where(Appointment.status == status_filter)
     return list(db.scalars(stmt))

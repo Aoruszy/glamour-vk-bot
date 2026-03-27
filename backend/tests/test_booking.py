@@ -40,6 +40,27 @@ def test_create_appointment_creates_booking_and_notifications(db_session, seeded
     assert appointment.status.value == "confirmed"
     assert appointment.end_time == time(11, 30)
     assert len(notifications) >= 1
+    assert appointment.client_vk_user_id == client.vk_user_id
+
+
+def test_create_appointment_accepts_vk_user_id(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    work_date = seeded_booking_data["work_date"]
+
+    appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            vk_user_id=client.vk_user_id,
+            service_id=service.id,
+            appointment_date=work_date,
+            start_time=time(10, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    assert appointment.client_id == client.id
+    assert appointment.client_vk_user_id == client.vk_user_id
 
 
 def test_available_slots_exclude_taken_time(db_session, seeded_booking_data) -> None:

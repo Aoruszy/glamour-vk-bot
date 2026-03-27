@@ -138,7 +138,7 @@ export default function App() {
     end_time: "18:00:00"
   });
   const [appointmentForm, setAppointmentForm] = useState({
-    client_id: "",
+    vk_user_id: "",
     service_id: "",
     master_id: "",
     appointment_date: new Date().toISOString().slice(0, 10),
@@ -338,8 +338,10 @@ export default function App() {
     }
   }
 
-  function clientName(clientId: number) {
-    return snapshot.clients.find((item) => item.id === clientId)?.full_name || `Клиент #${clientId}`;
+  function appointmentClientLabel(appointment: Appointment) {
+    return appointment.client_name
+      ? `${appointment.client_name} (VK ID: ${appointment.client_vk_user_id})`
+      : `VK ID: ${appointment.client_vk_user_id}`;
   }
 
   function serviceName(serviceId: number) {
@@ -439,9 +441,13 @@ export default function App() {
           <div className="two-column">
             <form className="form-grid" onSubmit={(event) => {
               event.preventDefault();
+              if (!appointmentForm.vk_user_id) {
+                setError("Укажите VK ID клиента для создания записи.");
+                return;
+              }
               void runAction(async () => {
                 await api.createAppointment({
-                  client_id: Number(appointmentForm.client_id),
+                  vk_user_id: Number(appointmentForm.vk_user_id),
                   service_id: Number(appointmentForm.service_id),
                   appointment_date: appointmentForm.appointment_date,
                   start_time: appointmentForm.start_time,
@@ -454,11 +460,14 @@ export default function App() {
               }, "Запись успешно создана.");
             }}>
               <label>
-                <span>Клиент</span>
-                <select value={appointmentForm.client_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, client_id: event.target.value }))}>
-                  <option value="">Выберите клиента</option>
-                  {snapshot.clients.map((client) => <option key={client.id} value={client.id}>{client.full_name || `Клиент #${client.id}`}</option>)}
-                </select>
+                <span>VK ID клиента</span>
+                <input
+                  type="number"
+                  value={appointmentForm.vk_user_id}
+                  onChange={(event) => setAppointmentForm((current) => ({ ...current, vk_user_id: event.target.value }))}
+                  placeholder="Например, 237104538"
+                  required
+                />
               </label>
               <label>
                 <span>Услуга</span>
@@ -511,7 +520,7 @@ export default function App() {
                 {snapshot.appointments.slice(0, 8).map((appointment) => (
                   <tr key={appointment.id}>
                     <td>{appointment.appointment_date} {appointment.start_time.slice(0, 5)}</td>
-                    <td>{clientName(appointment.client_id)}</td>
+                    <td>{appointmentClientLabel(appointment)}</td>
                     <td>{serviceName(appointment.service_id)}</td>
                     <td>{masterName(appointment.master_id)}</td>
                     <td><span className={`status-chip status-${appointment.status}`}>{appointmentStatusLabel(appointment.status)}</span></td>
@@ -570,7 +579,7 @@ export default function App() {
                   <option value="">Выберите запись</option>
                   {snapshot.appointments.map((appointment) => (
                     <option key={appointment.id} value={appointment.id}>
-                      #{appointment.id} · {clientName(appointment.client_id)} ·{" "}
+                      #{appointment.id} · {appointmentClientLabel(appointment)} ·{" "}
                       {appointment.appointment_date} {appointment.start_time.slice(0, 5)}
                     </option>
                   ))}
@@ -671,7 +680,7 @@ export default function App() {
                 <div className="slot-preview">
                   {selectedManagedAppointment ? (
                     <p>
-                      #{selectedManagedAppointment.id} · {clientName(selectedManagedAppointment.client_id)} ·{" "}
+                      #{selectedManagedAppointment.id} · {appointmentClientLabel(selectedManagedAppointment)} ·{" "}
                       {serviceName(selectedManagedAppointment.service_id)} ·{" "}
                       {selectedManagedAppointment.appointment_date}{" "}
                       {selectedManagedAppointment.start_time.slice(0, 5)}
@@ -878,7 +887,7 @@ export default function App() {
             <div className="mini-panel">
               <h3>Последние клиенты</h3>
               <ul className="list">
-                {snapshot.clients.slice(0, 6).map((client) => <li key={client.id}><strong>{client.full_name || `Клиент #${client.id}`}</strong><span>{client.phone || "Телефон пока не указан"}</span></li>)}
+                {snapshot.clients.slice(0, 6).map((client) => <li key={client.id}><strong>{client.full_name || `VK ID: ${client.vk_user_id}`}</strong><span>{client.phone ? `${client.phone} · VK ID: ${client.vk_user_id}` : `VK ID: ${client.vk_user_id}`}</span></li>)}
               </ul>
             </div>
             <div className="mini-panel">

@@ -174,7 +174,8 @@ export const api = {
     return request<Appointment[]>("/appointments");
   },
   createAppointment(payload: {
-    client_id: number;
+    client_id?: number;
+    vk_user_id?: number;
     service_id: number;
     appointment_date: string;
     start_time: string;

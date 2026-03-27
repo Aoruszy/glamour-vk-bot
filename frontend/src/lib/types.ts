@@ -68,6 +68,8 @@ export type Schedule = {
 export type Appointment = {
   id: number;
   client_id: number;
+  client_vk_user_id: number;
+  client_name: string | null;
   master_id: number;
   service_id: number;
   appointment_date: string;

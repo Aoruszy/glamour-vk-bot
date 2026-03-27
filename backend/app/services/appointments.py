@@ -40,6 +40,13 @@ def _require_client(db: Session, client_id: int) -> Client:
     return client
 
 
+def _require_client_by_vk(db: Session, vk_user_id: int) -> Client:
+    client = db.scalar(select(Client).where(Client.vk_user_id == vk_user_id))
+    if not client:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client with this VK ID not found.")
+    return client
+
+
 def _require_service(db: Session, service_id: int) -> Service:
     service = db.get(Service, service_id)
     if not service or not service.is_active:
@@ -170,13 +177,17 @@ def get_available_slots(
 
 
 def create_appointment(db: Session, payload: AppointmentCreate) -> Appointment:
-    _require_client(db, payload.client_id)
+    client = (
+        _require_client(db, payload.client_id)
+        if payload.client_id is not None
+        else _require_client_by_vk(db, payload.vk_user_id)  # type: ignore[arg-type]
+    )
     service = _require_service(db, payload.service_id)
     master = _resolve_master(db, service, payload.appointment_date, payload.start_time, payload.master_id)
     end_time = _ensure_master_slot_available(db, master, service, payload.appointment_date, payload.start_time)
 
     appointment = Appointment(
-        client_id=payload.client_id,
+        client_id=client.id,
         master_id=master.id,
         service_id=service.id,
         appointment_date=payload.appointment_date,

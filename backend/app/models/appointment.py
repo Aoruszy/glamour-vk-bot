@@ -33,3 +33,11 @@ class Appointment(TimestampMixin, Base):
     master = relationship("Master", back_populates="appointments")
     service = relationship("Service")
     notifications = relationship("Notification", back_populates="appointment", cascade="all, delete-orphan")
+
+    @property
+    def client_vk_user_id(self) -> int:
+        return self.client.vk_user_id
+
+    @property
+    def client_name(self) -> str | None:
+        return self.client.full_name

@@ -1,17 +1,26 @@
 from datetime import date, datetime, time
 
+from pydantic import model_validator
+
 from app.core.enums import ActorRole, AppointmentStatus
 from app.schemas.common import ORMModel
 
 
 class AppointmentCreate(ORMModel):
-    client_id: int
+    client_id: int | None = None
+    vk_user_id: int | None = None
     service_id: int
     appointment_date: date
     start_time: time
     master_id: int | None = None
     comment: str | None = None
     created_by: ActorRole = ActorRole.CLIENT
+
+    @model_validator(mode="after")
+    def validate_client_reference(self) -> "AppointmentCreate":
+        if self.client_id is None and self.vk_user_id is None:
+            raise ValueError("Provide client_id or vk_user_id.")
+        return self
 
 
 class AppointmentReschedule(ORMModel):
@@ -36,6 +45,8 @@ class AppointmentStatusUpdate(ORMModel):
 class AppointmentRead(ORMModel):
     id: int
     client_id: int
+    client_vk_user_id: int
+    client_name: str | None
     master_id: int
     service_id: int
     appointment_date: date
