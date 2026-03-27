@@ -152,6 +152,20 @@ export default function App() {
     }));
   }, [snapshot.appointments, manageForm.appointment_id]);
 
+  useEffect(() => {
+    if (!appointmentForm.service_id || !appointmentForm.master_id) {
+      return;
+    }
+    const selectedServiceId = Number(appointmentForm.service_id);
+    const selectedMasterId = Number(appointmentForm.master_id);
+    const matchesService = snapshot.masters.some(
+      (master) => master.id === selectedMasterId && master.service_ids.includes(selectedServiceId)
+    );
+    if (!matchesService) {
+      setAppointmentForm((current) => ({ ...current, master_id: "" }));
+    }
+  }, [appointmentForm.service_id, appointmentForm.master_id, snapshot.masters]);
+
   async function bootstrapSession() {
     try {
       const admin = await api.getCurrentAdmin();
@@ -260,6 +274,9 @@ export default function App() {
   const recentAppointments = snapshot.appointments.slice(0, 8);
   const recentClients = snapshot.clients.slice(0, 8);
   const recentSchedules = snapshot.schedules.slice(0, 8);
+  const appointmentMasters = appointmentForm.service_id
+    ? snapshot.masters.filter((master) => master.service_ids.includes(Number(appointmentForm.service_id)))
+    : snapshot.masters;
 
   const clientLabel = (appointment: Appointment) =>
     appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
@@ -456,7 +473,7 @@ export default function App() {
                   </select>
                 </label>
                 <label><span>Услуга</span><select value={appointmentForm.service_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, service_id: event.target.value }))}><option value="">Выберите услугу</option>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
-                <label><span>Мастер</span><select value={appointmentForm.master_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Любой свободный мастер</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
+                <label><span>Мастер</span><select value={appointmentForm.master_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Любой свободный мастер</option>{appointmentMasters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
                 <label><span>Дата</span><input type="date" value={appointmentForm.appointment_date} onChange={(event) => setAppointmentForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
                 <label><span>Время</span><input type="time" value={appointmentForm.start_time.slice(0, 5)} onChange={(event) => setAppointmentForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
                 <label className="full-width"><span>Комментарий</span><input value={appointmentForm.comment} onChange={(event) => setAppointmentForm((current) => ({ ...current, comment: event.target.value }))} /></label>
