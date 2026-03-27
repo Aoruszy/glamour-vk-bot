@@ -113,6 +113,8 @@ Important production URLs after setup:
 
 Detailed server setup is described in `docs/deployment.md`.
 
+For a shared Ubuntu server without Docker, where another project is already running, use `docs/deployment-ubuntu-shared.md`.
+
 ## Main API Areas
 
 - `/api/v1/clients`

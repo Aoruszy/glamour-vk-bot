@@ -1,0 +1,16 @@
+[Unit]
+Description=Glamour FastAPI application
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/glamour/backend
+EnvironmentFile=/var/www/glamour/backend/.env.production
+ExecStart=/var/www/glamour/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
