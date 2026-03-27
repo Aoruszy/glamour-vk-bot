@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from fastapi import BackgroundTasks
 from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
@@ -37,7 +36,7 @@ def test_vk_confirmation_returns_confirmation_token(db_session) -> None:
     settings = get_settings()
     event = VkEvent(type="confirmation", secret=settings.vk_callback_secret)
 
-    response = receive_vk_event(event, BackgroundTasks(), db_session)
+    response = receive_vk_event(event, db_session)
 
     assert isinstance(response, PlainTextResponse)
     assert response.body.decode() == settings.vk_confirmation_token
@@ -55,7 +54,7 @@ def test_vk_message_returns_debug_payload_without_access_token(monkeypatch, db_s
         }
     )
 
-    response = receive_vk_event(event, BackgroundTasks(), db_session)
+    response = receive_vk_event(event, db_session)
 
     assert isinstance(response, VkBotResponse)
     assert "Glamour" in response.reply_text
@@ -79,6 +78,17 @@ def test_vk_message_sends_via_vk_api_when_token_present(monkeypatch, db_session)
     monkeypatch.setenv("VK_API_VERSION", "5.199")
     get_settings.cache_clear()
     monkeypatch.setattr("app.api.routes.vk.VkApiClient", FakeVkApiClient)
+    monkeypatch.setattr(
+        "app.api.routes.vk._dispatch_vk_reply",
+        lambda **kwargs: FakeVkApiClient(
+            access_token=kwargs["access_token"],
+            api_version=kwargs["api_version"],
+        ).send_message(
+            user_id=kwargs["user_id"],
+            message=kwargs["message"],
+            keyboard='{"buttons":[]}' if kwargs["buttons"] == [] else None,
+        ),
+    )
 
     settings = get_settings()
     event = VkEvent.model_validate(
@@ -89,11 +99,7 @@ def test_vk_message_sends_via_vk_api_when_token_present(monkeypatch, db_session)
         }
     )
 
-    background_tasks = BackgroundTasks()
-    response = receive_vk_event(event, background_tasks, db_session)
-
-    for task in background_tasks.tasks:
-        task.func(*task.args, **task.kwargs)
+    response = receive_vk_event(event, db_session)
 
     assert isinstance(response, PlainTextResponse)
     assert response.body.decode() == "ok"

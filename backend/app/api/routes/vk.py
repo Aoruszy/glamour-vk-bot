@@ -1,6 +1,7 @@
 import logging
+import threading
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
@@ -29,10 +30,23 @@ def _send_vk_reply(*, access_token: str, api_version: str, user_id: int, message
         logger.exception("VK send_message failed for user_id=%s", user_id)
 
 
+def _dispatch_vk_reply(*, access_token: str, api_version: str, user_id: int, message: str, buttons: list[str]) -> None:
+    threading.Thread(
+        target=_send_vk_reply,
+        kwargs={
+            "access_token": access_token,
+            "api_version": api_version,
+            "user_id": user_id,
+            "message": message,
+            "buttons": buttons,
+        },
+        daemon=True,
+    ).start()
+
+
 @router.post("/events", response_model=None)
 def receive_vk_event(
     event: VkEvent,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> VkBotResponse | PlainTextResponse:
     settings = get_settings()
@@ -44,8 +58,7 @@ def receive_vk_event(
 
     from_id = event.object.message.from_id if event.object and event.object.message else None
     if from_id is not None and settings.vk_access_token:
-        background_tasks.add_task(
-            _send_vk_reply,
+        _dispatch_vk_reply(
             access_token=settings.vk_access_token,
             api_version=settings.vk_api_version,
             user_id=from_id,
