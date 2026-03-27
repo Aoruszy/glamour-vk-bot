@@ -297,8 +297,6 @@ export default function App() {
     appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
   const serviceName = (serviceId: number) => snapshot.services.find((item) => item.id === serviceId)?.name || `Услуга №${serviceId}`;
   const masterName = (masterId: number) => snapshot.masters.find((item) => item.id === masterId)?.full_name || `Мастер №${masterId}`;
-  const categoryName = (categoryId: number) =>
-    snapshot.categories.find((item) => item.id === categoryId)?.name || `Категория №${categoryId}`;
   const resetCategoryForm = () => {
     setCategoryForm({ name: "", description: "" });
     setEditingCategoryId(null);
@@ -516,7 +514,7 @@ export default function App() {
 
       {activeSection === "catalog" ? (
         <div className="dashboard-grid">
-          <SectionPanel title="Каталог" subtitle="Категории, услуги и мастера, которые видит клиент во VK.">
+          <SectionPanel title="Каталог" subtitle="Три рабочие формы: добавить новое или выбрать существующую сущность и изменить ее.">
             <div className="catalog-grid">
               <div className="catalog-forms">
                 <form className="form-grid compact catalog-form" onSubmit={(event) => {
@@ -536,6 +534,35 @@ export default function App() {
                   ).then(() => resetCategoryForm());
                 }}>
                   <h3>{editingCategoryId !== null ? "Редактирование категории" : "Новая категория"}</h3>
+                  <label className="full-width">
+                    <span>Существующая категория</span>
+                    <select
+                      value={editingCategoryId ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (!value) {
+                          resetCategoryForm();
+                          return;
+                        }
+                        const category = snapshot.categories.find((item) => item.id === Number(value));
+                        if (!category) {
+                          return;
+                        }
+                        setEditingCategoryId(category.id);
+                        setCategoryForm({
+                          name: category.name,
+                          description: category.description || ""
+                        });
+                      }}
+                    >
+                      <option value="">Создать новую категорию</option>
+                      {snapshot.categories.map((category) => (
+                        <option key={category.id} value={category.id}>
+                          {category.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label><span>Название</span><input value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} /></label>
                   <label className="full-width"><span>Описание</span><input value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} /></label>
                   {editingCategoryId !== null ? <button className="button ghost full-width" type="button" onClick={resetCategoryForm}>Отменить редактирование</button> : null}
@@ -564,8 +591,41 @@ export default function App() {
                   ).then(() => resetServiceForm());
                 }}>
                   <h3>{editingServiceId !== null ? "Редактирование услуги" : "Новая услуга"}</h3>
+                  <label className="full-width">
+                    <span>Существующая услуга</span>
+                    <select
+                      value={editingServiceId ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (!value) {
+                          resetServiceForm();
+                          return;
+                        }
+                        const service = snapshot.services.find((item) => item.id === Number(value));
+                        if (!service) {
+                          return;
+                        }
+                        setEditingServiceId(service.id);
+                        setServiceForm({
+                          category_id: String(service.category_id),
+                          name: service.name,
+                          description: service.description || "",
+                          duration_minutes: String(service.duration_minutes),
+                          price: String(service.price)
+                        });
+                      }}
+                    >
+                      <option value="">Создать новую услугу</option>
+                      {snapshot.services.map((service) => (
+                        <option key={service.id} value={service.id}>
+                          {service.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label><span>Категория</span><select value={serviceForm.category_id} onChange={(event) => setServiceForm((current) => ({ ...current, category_id: event.target.value }))}><option value="">Выберите категорию</option>{snapshot.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
                   <label><span>Название</span><input value={serviceForm.name} onChange={(event) => setServiceForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                  <label className="full-width"><span>Описание</span><input value={serviceForm.description} onChange={(event) => setServiceForm((current) => ({ ...current, description: event.target.value }))} /></label>
                   <label><span>Длительность</span><input type="number" value={serviceForm.duration_minutes} onChange={(event) => setServiceForm((current) => ({ ...current, duration_minutes: event.target.value }))} /></label>
                   <label><span>Цена</span><input value={serviceForm.price} onChange={(event) => setServiceForm((current) => ({ ...current, price: event.target.value }))} /></label>
                   {editingServiceId !== null ? <button className="button ghost full-width" type="button" onClick={resetServiceForm}>Отменить редактирование</button> : null}
@@ -594,149 +654,46 @@ export default function App() {
                   ).then(() => resetMasterForm());
                 }}>
                   <h3>{editingMasterId !== null ? "Редактирование мастера" : "Новый мастер"}</h3>
+                  <label className="full-width">
+                    <span>Существующий мастер</span>
+                    <select
+                      value={editingMasterId ?? ""}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (!value) {
+                          resetMasterForm();
+                          return;
+                        }
+                        const master = snapshot.masters.find((item) => item.id === Number(value));
+                        if (!master) {
+                          return;
+                        }
+                        setEditingMasterId(master.id);
+                        setMasterForm({
+                          full_name: master.full_name,
+                          specialization: master.specialization || "",
+                          phone: master.phone || "",
+                          experience_years: String(master.experience_years ?? 3),
+                          service_ids: master.service_ids
+                        });
+                      }}
+                    >
+                      <option value="">Создать нового мастера</option>
+                      {snapshot.masters.map((master) => (
+                        <option key={master.id} value={master.id}>
+                          {master.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label><span>ФИО</span><input value={masterForm.full_name} onChange={(event) => setMasterForm((current) => ({ ...current, full_name: event.target.value }))} /></label>
                   <label><span>Специализация</span><input value={masterForm.specialization} onChange={(event) => setMasterForm((current) => ({ ...current, specialization: event.target.value }))} /></label>
+                  <label><span>Телефон</span><input value={masterForm.phone} onChange={(event) => setMasterForm((current) => ({ ...current, phone: event.target.value }))} /></label>
+                  <label><span>Стаж, лет</span><input type="number" value={masterForm.experience_years} onChange={(event) => setMasterForm((current) => ({ ...current, experience_years: event.target.value }))} /></label>
                   <label className="full-width"><span>Услуги мастера</span><select multiple value={masterForm.service_ids.map(String)} onChange={(event) => setMasterForm((current) => ({ ...current, service_ids: Array.from(event.target.selectedOptions).map((option) => Number(option.value)) }))}>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
                   {editingMasterId !== null ? <button className="button ghost full-width" type="button" onClick={resetMasterForm}>Отменить редактирование</button> : null}
                   <button className="button primary full-width" type="submit">{editingMasterId !== null ? "Сохранить мастера" : "Добавить мастера"}</button>
                 </form>
-              </div>
-
-              <div className="catalog-lists">
-                <div className="mini-panel">
-                  <h3>Категории</h3>
-                  <ul className="list entity-list">
-                    {snapshot.categories.map((category) => (
-                      <li key={category.id}>
-                        <div>
-                          <strong>{category.name}</strong>
-                          <span>{category.description || "Без описания"}</span>
-                        </div>
-                        <div className="entity-actions">
-                          <button
-                            className="button subtle"
-                            type="button"
-                            onClick={() => {
-                              setEditingCategoryId(category.id);
-                              setCategoryForm({
-                                name: category.name,
-                                description: category.description || ""
-                              });
-                            }}
-                          >
-                            Редактировать
-                          </button>
-                          <button
-                            className="button subtle"
-                            type="button"
-                            onClick={() =>
-                              void runAction(
-                                () => api.updateCategory(category.id, { is_active: !category.is_active }),
-                                category.is_active
-                                  ? `Категория «${category.name}» скрыта.`
-                                  : `Категория «${category.name}» снова активна.`
-                              )
-                            }
-                          >
-                            {category.is_active ? "Скрыть" : "Показать"}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="mini-panel">
-                  <h3>Услуги</h3>
-                  <ul className="list entity-list">
-                    {snapshot.services.map((service) => (
-                      <li key={service.id}>
-                        <div>
-                          <strong>{service.name}</strong>
-                          <span>{categoryName(service.category_id)} · {service.duration_minutes} мин · {service.price} ₽</span>
-                        </div>
-                        <div className="entity-actions">
-                          <button
-                            className="button subtle"
-                            type="button"
-                            onClick={() => {
-                              setEditingServiceId(service.id);
-                              setServiceForm({
-                                category_id: String(service.category_id),
-                                name: service.name,
-                                description: service.description || "",
-                                duration_minutes: String(service.duration_minutes),
-                                price: String(service.price)
-                              });
-                            }}
-                          >
-                            Редактировать
-                          </button>
-                          <button
-                            className="button subtle"
-                            type="button"
-                            onClick={() =>
-                              void runAction(
-                                () => api.updateService(service.id, { is_active: !service.is_active }),
-                                service.is_active
-                                  ? `Услуга «${service.name}» скрыта.`
-                                  : `Услуга «${service.name}» снова активна.`
-                              )
-                            }
-                          >
-                            {service.is_active ? "Скрыть" : "Показать"}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="mini-panel">
-                  <h3>Мастера</h3>
-                  <ul className="list entity-list">
-                    {snapshot.masters.map((master) => (
-                      <li key={master.id}>
-                        <div>
-                          <strong>{master.full_name}</strong>
-                          <span>{master.specialization || "Специализация не указана"}</span>
-                        </div>
-                        <div className="entity-actions">
-                          <button
-                            className="button subtle"
-                            type="button"
-                            onClick={() => {
-                              setEditingMasterId(master.id);
-                              setMasterForm({
-                                full_name: master.full_name,
-                                specialization: master.specialization || "",
-                                phone: master.phone || "",
-                                experience_years: String(master.experience_years ?? 3),
-                                service_ids: master.service_ids
-                              });
-                            }}
-                          >
-                            Редактировать
-                          </button>
-                          <button
-                            className="button subtle"
-                            type="button"
-                            onClick={() =>
-                              void runAction(
-                                () => api.updateMaster(master.id, { is_active: !master.is_active }),
-                                master.is_active
-                                  ? `Мастер «${master.full_name}» скрыт.`
-                                  : `Мастер «${master.full_name}» снова активен.`
-                              )
-                            }
-                          >
-                            {master.is_active ? "Скрыть" : "Показать"}
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
               </div>
             </div>
           </SectionPanel>
