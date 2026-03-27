@@ -263,6 +263,11 @@ export default function App() {
 
   const clientLabel = (appointment: Appointment) =>
     appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
+  const clientOptionLabel = (client: Client) => {
+    const title = client.full_name || `VK ID ${client.vk_user_id}`;
+    const phone = client.phone ? ` · ${client.phone}` : "";
+    return `${title} · VK ID ${client.vk_user_id}${phone}`;
+  };
   const serviceName = (serviceId: number) => snapshot.services.find((item) => item.id === serviceId)?.name || `Услуга №${serviceId}`;
   const masterName = (masterId: number) => snapshot.masters.find((item) => item.id === masterId)?.full_name || `Мастер №${masterId}`;
   const resetCategoryForm = () => {
@@ -422,7 +427,7 @@ export default function App() {
               <form className="form-grid" onSubmit={(event) => {
                 event.preventDefault();
                 if (!appointmentForm.vk_user_id) {
-                  setError("Укажите VK ID клиента для записи.");
+                  setError("Выберите клиента из зарегистрированной базы.");
                   return;
                 }
                 void runAction(() => api.createAppointment({
@@ -435,7 +440,21 @@ export default function App() {
                   created_by: "admin"
                 }), "Запись создана, клиент уведомлен.");
               }}>
-                <label><span>VK ID клиента</span><input type="number" value={appointmentForm.vk_user_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, vk_user_id: event.target.value }))} required /></label>
+                <label>
+                  <span>Клиент</span>
+                  <select
+                    value={appointmentForm.vk_user_id}
+                    onChange={(event) => setAppointmentForm((current) => ({ ...current, vk_user_id: event.target.value }))}
+                    required
+                  >
+                    <option value="">Выберите клиента</option>
+                    {snapshot.clients.map((client) => (
+                      <option key={client.id} value={client.vk_user_id}>
+                        {clientOptionLabel(client)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <label><span>Услуга</span><select value={appointmentForm.service_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, service_id: event.target.value }))}><option value="">Выберите услугу</option>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
                 <label><span>Мастер</span><select value={appointmentForm.master_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Любой свободный мастер</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
                 <label><span>Дата</span><input type="date" value={appointmentForm.appointment_date} onChange={(event) => setAppointmentForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
