@@ -287,6 +287,8 @@ export default function App() {
   };
   const serviceName = (serviceId: number) => snapshot.services.find((item) => item.id === serviceId)?.name || `Услуга №${serviceId}`;
   const masterName = (masterId: number) => snapshot.masters.find((item) => item.id === masterId)?.full_name || `Мастер №${masterId}`;
+  const masterListLabel = (masterIds: number[]) =>
+    masterIds.map((masterId) => masterName(masterId)).join(", ");
   const resetCategoryForm = () => {
     setCategoryForm({ name: "", description: "" });
     setEditingCategoryId(null);
@@ -479,7 +481,7 @@ export default function App() {
                 <label className="full-width"><span>Комментарий</span><input value={appointmentForm.comment} onChange={(event) => setAppointmentForm((current) => ({ ...current, comment: event.target.value }))} /></label>
                 <button className="button primary full-width" type="submit">Создать запись</button>
               </form>
-              <div className="slot-preview"><h3>Свободные окна</h3>{slotPreview.length === 0 ? <p>Пока пусто. Выберите услугу и дату, затем нажмите кнопку просмотра.</p> : <ul>{slotPreview.slice(0, 8).map((slot) => <li key={`${slot.work_date}-${slot.start_time}`}><strong>{slot.start_time.slice(0, 5)}-{slot.end_time.slice(0, 5)}</strong><span>Мастера: {slot.master_ids.join(", ")}</span></li>)}</ul>}</div>
+              <div className="slot-preview"><h3>Свободные окна</h3>{slotPreview.length === 0 ? <p>Пока пусто. Выберите услугу и дату, затем нажмите кнопку просмотра.</p> : <ul>{slotPreview.slice(0, 8).map((slot) => <li key={`${slot.work_date}-${slot.start_time}`}><strong>{slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)}</strong><span>Мастер: {masterListLabel(slot.master_ids)}</span></li>)}</ul>}</div>
             </div>
             <div className="table-wrap">
               <table>
