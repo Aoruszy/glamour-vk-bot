@@ -122,6 +122,12 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
+  updateCategory(categoryId: number, payload: { name?: string; description?: string; is_active?: boolean }) {
+    return request<ServiceCategory>(`/service-categories/${categoryId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  },
   listServices() {
     return request<Service[]>("/services");
   },
@@ -135,6 +141,22 @@ export const api = {
   }) {
     return request<Service>("/services", {
       method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  updateService(
+    serviceId: number,
+    payload: {
+      category_id?: number;
+      name?: string;
+      description?: string;
+      duration_minutes?: number;
+      price?: string;
+      is_active?: boolean;
+    }
+  ) {
+    return request<Service>(`/services/${serviceId}`, {
+      method: "PATCH",
       body: JSON.stringify(payload)
     });
   },
@@ -152,6 +174,23 @@ export const api = {
   }) {
     return request<Master>("/masters", {
       method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+  updateMaster(
+    masterId: number,
+    payload: {
+      full_name?: string;
+      specialization?: string;
+      description?: string;
+      phone?: string;
+      experience_years?: number;
+      is_active?: boolean;
+      service_ids?: number[];
+    }
+  ) {
+    return request<Master>(`/masters/${masterId}`, {
+      method: "PATCH",
       body: JSON.stringify(payload)
     });
   },
