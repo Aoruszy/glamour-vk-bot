@@ -129,7 +129,13 @@ For a shared Ubuntu server without Docker, where another project is already runn
 
 ## Demo Data
 
-Use `python -m app.scripts.seed_demo --reset` inside `backend` to create demo categories, services, masters, clients, schedules, and appointments for the MVP presentation.
+Use `python -m app.scripts.seed_demo --reset` inside `backend` to create demo categories, services, masters, and schedules without clients.
+
+If you need a full demo with clients and appointments, run:
+
+```bash
+python -m app.scripts.seed_demo --reset --with-clients --with-appointments
+```
 
 ## Notification Queue
 
