@@ -18,7 +18,11 @@ from app.schemas.appointment import (
     AvailabilityGroup,
 )
 from app.services.audit import log_action
-from app.services.notifications import append_status_notification, refresh_appointment_notifications
+from app.services.notifications import (
+    append_status_notification,
+    deliver_due_notifications,
+    refresh_appointment_notifications,
+)
 
 BLOCKING_STATUSES = {
     AppointmentStatus.NEW,
@@ -36,21 +40,21 @@ CANCELED_STATUSES = {
 def _require_client(db: Session, client_id: int) -> Client:
     client = db.get(Client, client_id)
     if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Клиент не найден.")
     return client
 
 
 def _require_client_by_vk(db: Session, vk_user_id: int) -> Client:
     client = db.scalar(select(Client).where(Client.vk_user_id == vk_user_id))
     if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client with this VK ID not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Клиент с таким VK ID не найден.")
     return client
 
 
 def _require_service(db: Session, service_id: int) -> Service:
     service = db.get(Service, service_id)
     if not service or not service.is_active:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found or inactive.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Услуга не найдена или отключена.")
     return service
 
 
@@ -81,7 +85,7 @@ def _ensure_master_slot_available(
         )
     )
     if not schedule:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Master does not work on the selected date.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Мастер не работает в выбранную дату.")
 
     start_dt = datetime.combine(work_date, start_time)
     end_dt = start_dt + timedelta(minutes=service.duration_minutes)
@@ -89,7 +93,7 @@ def _ensure_master_slot_available(
     schedule_end = datetime.combine(work_date, schedule.end_time)
 
     if start_dt < schedule_start or end_dt > schedule_end:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected time is outside the master's schedule.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Выбранное время вне рабочего графика мастера.")
 
     stmt = select(Appointment).where(
         Appointment.master_id == master.id,
@@ -104,7 +108,7 @@ def _ensure_master_slot_available(
         existing_start = datetime.combine(existing.appointment_date, existing.start_time)
         existing_end = datetime.combine(existing.appointment_date, existing.end_time)
         if start_dt < existing_end and end_dt > existing_start:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Selected time overlaps with an existing appointment.")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Выбранное время пересекается с другой записью.")
 
     return end_dt.time()
 
@@ -113,9 +117,9 @@ def _resolve_master(db: Session, service: Service, work_date: date, start_time: 
     if master_id is not None:
         master = db.get(Master, master_id)
         if not master or not master.is_active:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found or inactive.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Мастер не найден или отключен.")
         if service.id not in master.service_ids:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Selected master does not provide this service.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Выбранный мастер не оказывает эту услугу.")
         _ensure_master_slot_available(db, master, service, work_date, start_time)
         return master
 
@@ -125,7 +129,7 @@ def _resolve_master(db: Session, service: Service, work_date: date, start_time: 
             return master
         except HTTPException:
             continue
-    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No free master is available for the selected slot.")
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="На выбранный слот нет свободного мастера.")
 
 
 def get_available_slots(
@@ -232,6 +236,7 @@ def create_appointment(db: Session, payload: AppointmentCreate) -> Appointment:
     )
     db.commit()
     db.refresh(appointment)
+    deliver_due_notifications(db)
     return appointment
 
 
@@ -243,19 +248,19 @@ def cancel_appointment(
     reason: str | None = None,
 ) -> Appointment:
     if appointment.status in CANCELED_STATUSES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Appointment is already canceled.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Запись уже отменена.")
 
     appointment.status = (
         AppointmentStatus.CANCELED_BY_ADMIN if actor_role == ActorRole.ADMIN else AppointmentStatus.CANCELED_BY_CLIENT
     )
     if reason:
-        appointment.comment = f"{appointment.comment or ''}\nCancel reason: {reason}".strip()
+        appointment.comment = f"{appointment.comment or ''}\nПричина отмены: {reason}".strip()
 
     append_status_notification(
         db,
         appointment_id=appointment.id,
         notification_type=NotificationType.CANCELLATION,
-        message="Appointment was canceled.",
+        message="Запись была отменена.",
     )
     log_action(
         db,
@@ -267,12 +272,13 @@ def cancel_appointment(
     )
     db.commit()
     db.refresh(appointment)
+    deliver_due_notifications(db)
     return appointment
 
 
 def reschedule_appointment(db: Session, *, appointment: Appointment, payload: AppointmentReschedule) -> Appointment:
     if appointment.status in CANCELED_STATUSES:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Canceled appointments cannot be rescheduled.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Отмененную запись нельзя перенести.")
 
     service = _require_service(db, appointment.service_id)
     master = _resolve_master(
@@ -304,7 +310,7 @@ def reschedule_appointment(db: Session, *, appointment: Appointment, payload: Ap
         db,
         appointment_id=appointment.id,
         notification_type=NotificationType.RESCHEDULE,
-        message="Appointment was rescheduled.",
+        message="Запись была перенесена.",
     )
     log_action(
         db,
@@ -316,6 +322,7 @@ def reschedule_appointment(db: Session, *, appointment: Appointment, payload: Ap
     )
     db.commit()
     db.refresh(appointment)
+    deliver_due_notifications(db)
     return appointment
 
 
@@ -338,6 +345,13 @@ def update_appointment_status(
     if payload.comment:
         appointment.comment = payload.comment
 
+    append_status_notification(
+        db,
+        appointment_id=appointment.id,
+        notification_type=NotificationType.STATUS_UPDATE,
+        message=f"Статус записи обновлен: {payload.status.value}.",
+    )
+
     log_action(
         db,
         user_role=payload.actor_role,
@@ -348,4 +362,5 @@ def update_appointment_status(
     )
     db.commit()
     db.refresh(appointment)
+    deliver_due_notifications(db)
     return appointment

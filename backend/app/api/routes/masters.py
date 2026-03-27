@@ -22,7 +22,7 @@ def _attach_services(db: Session, master: Master, service_ids: list[int]) -> Non
         return
     services = list(db.scalars(select(Service).where(Service.id.in_(service_ids), Service.is_active.is_(True))))
     if len(services) != len(set(service_ids)):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="One or more services were not found or inactive.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Одна или несколько услуг не найдены или отключены.")
     master.services = services
 
 
@@ -50,7 +50,7 @@ def create_master(payload: MasterCreate, db: Session = Depends(get_db)) -> Maste
 def get_master(master_id: int, db: Session = Depends(get_db)) -> MasterRead:
     master = db.scalar(select(Master).options(selectinload(Master.services)).where(Master.id == master_id))
     if not master:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Мастер не найден.")
     return _serialize_master(master)
 
 
@@ -58,7 +58,7 @@ def get_master(master_id: int, db: Session = Depends(get_db)) -> MasterRead:
 def update_master(master_id: int, payload: MasterUpdate, db: Session = Depends(get_db)) -> MasterRead:
     master = db.scalar(select(Master).options(selectinload(Master.services)).where(Master.id == master_id))
     if not master:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Мастер не найден.")
     for field, value in payload.model_dump(exclude_unset=True, exclude={"service_ids"}).items():
         setattr(master, field, value)
     if payload.service_ids is not None:

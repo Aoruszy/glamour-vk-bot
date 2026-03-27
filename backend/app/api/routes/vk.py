@@ -51,7 +51,7 @@ def receive_vk_event(
 ) -> VkBotResponse | PlainTextResponse:
     settings = get_settings()
     if event.secret is not None and event.secret != settings.vk_callback_secret:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid VK callback secret.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Неверный секретный ключ Callback API.")
     if event.type != "confirmation" and event.type != "message_new":
         return PlainTextResponse("ok")
     result = handle_vk_event(db, event, settings.vk_confirmation_token)

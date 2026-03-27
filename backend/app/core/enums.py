@@ -24,6 +24,7 @@ class NotificationType(str, Enum):
     REMINDER_2H = "reminder_2h"
     CANCELLATION = "cancellation"
     RESCHEDULE = "reschedule"
+    STATUS_UPDATE = "status_update"
 
 
 class NotificationStatus(str, Enum):

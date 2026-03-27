@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 
 import { LoginScreen } from "./components/LoginScreen";
 import { SectionPanel } from "./components/SectionPanel";
@@ -8,7 +8,6 @@ import type {
   Appointment,
   AvailabilityGroup,
   Client,
-  Master,
   Notification,
   Schedule,
   Service,
@@ -21,19 +20,27 @@ type Snapshot = {
   clients: Client[];
   categories: ServiceCategory[];
   services: Service[];
-  masters: Master[];
+  masters: { id: number; full_name: string }[];
   schedules: Schedule[];
   appointments: Appointment[];
   notifications: Notification[];
 };
 
+type SectionId = "overview" | "appointments" | "catalog" | "clients" | "notifications";
+
+const SECTIONS: Array<{ id: SectionId; label: string; note: string }> = [
+  { id: "overview", label: "Обзор", note: "Ключевые цифры и недавние события" },
+  { id: "appointments", label: "Записи", note: "Создание, перенос и статусы" },
+  { id: "catalog", label: "Каталог", note: "Категории, услуги и мастера" },
+  { id: "clients", label: "Клиенты", note: "База и рабочий график" },
+  { id: "notifications", label: "Уведомления", note: "VK и очередь отправки" }
+];
+
 function monthBounds() {
   const today = new Date();
-  const start = new Date(today.getFullYear(), today.getMonth(), 1);
-  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10)
+    start: new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10),
+    end: new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().slice(0, 10)
   };
 }
 
@@ -51,56 +58,38 @@ function emptySnapshot(): Snapshot {
 }
 
 function appointmentStatusLabel(status: string) {
-  switch (status) {
-    case "new":
-      return "Новая";
-    case "confirmed":
-      return "Подтверждена";
-    case "completed":
-      return "Выполнена";
-    case "canceled_by_client":
-      return "Отменена клиентом";
-    case "canceled_by_admin":
-      return "Отменена администратором";
-    case "rescheduled":
-      return "Перенесена";
-    case "no_show":
-      return "Не пришел";
-    default:
-      return status;
-  }
+  return (
+    {
+      new: "Новая",
+      confirmed: "Подтверждена",
+      completed: "Завершена",
+      canceled_by_client: "Отменена клиентом",
+      canceled_by_admin: "Отменена салоном",
+      rescheduled: "Перенесена",
+      no_show: "Неявка"
+    }[status] ?? status
+  );
 }
 
 function notificationTypeLabel(type: string) {
-  switch (type) {
-    case "booking_confirmation":
-      return "Подтверждение записи";
-    case "reminder_24h":
-      return "Напоминание за 24 часа";
-    case "reminder_2h":
-      return "Напоминание за 2 часа";
-    case "cancellation":
-      return "Отмена";
-    case "reschedule":
-      return "Перенос";
-    default:
-      return type;
-  }
+  return (
+    {
+      booking_confirmation: "Подтверждение записи",
+      reminder_24h: "Напоминание за 24 часа",
+      reminder_2h: "Напоминание за 2 часа",
+      cancellation: "Отмена",
+      reschedule: "Перенос",
+      status_update: "Обновление статуса"
+    }[type] ?? type
+  );
 }
 
 function notificationStatusLabel(status: string) {
-  switch (status) {
-    case "pending":
-      return "Ожидает";
-    case "sent":
-      return "Отправлено";
-    case "skipped":
-      return "Пропущено";
-    case "failed":
-      return "Ошибка";
-    default:
-      return status;
-  }
+  return ({ pending: "Ожидает", sent: "Отправлено", skipped: "Пропущено", failed: "Ошибка" }[status] ?? status);
+}
+
+function formatDateTime(dateValue: string, timeValue: string) {
+  return `${dateValue} в ${timeValue.slice(0, 5)}`;
 }
 
 export default function App() {
@@ -114,6 +103,7 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("");
   const [slotPreview, setSlotPreview] = useState<AvailabilityGroup[]>([]);
   const [dateRange, setDateRange] = useState(monthBounds());
+  const [activeSection, setActiveSection] = useState<SectionId>("overview");
   const [loginForm, setLoginForm] = useState({ username: "admin", password: "" });
   const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
   const [serviceForm, setServiceForm] = useState({
@@ -145,7 +135,7 @@ export default function App() {
     start_time: "10:00:00",
     comment: ""
   });
-  const [appointmentManageForm, setAppointmentManageForm] = useState({
+  const [manageForm, setManageForm] = useState({
     appointment_id: "",
     appointment_date: new Date().toISOString().slice(0, 10),
     start_time: "10:00:00",
@@ -161,14 +151,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (snapshot.appointments.length === 0) {
-      return;
-    }
-    if (appointmentManageForm.appointment_id) {
+    if (snapshot.appointments.length === 0 || manageForm.appointment_id) {
       return;
     }
     const first = snapshot.appointments[0];
-    setAppointmentManageForm((current) => ({
+    setManageForm((current) => ({
       ...current,
       appointment_id: String(first.id),
       appointment_date: first.appointment_date,
@@ -177,7 +164,7 @@ export default function App() {
       status: first.status,
       comment: first.comment || ""
     }));
-  }, [snapshot.appointments, appointmentManageForm.appointment_id]);
+  }, [snapshot.appointments, manageForm.appointment_id]);
 
   async function bootstrapSession() {
     try {
@@ -197,42 +184,25 @@ export default function App() {
     setSnapshot(emptySnapshot());
     setLoading(false);
     setRefreshing(false);
+    setError("");
     setStatusMessage("");
   }
 
   async function refreshAll(initial = false) {
-    if (initial) {
-      setLoading(true);
-    } else {
-      setRefreshing(true);
-    }
+    initial ? setLoading(true) : setRefreshing(true);
     setError("");
-
     try {
-      const [stats, clients, categories, services, masters, schedules, appointments, notifications] =
-        await Promise.all([
-          api.getStats(dateRange.start, dateRange.end),
-          api.listClients(),
-          api.listCategories(),
-          api.listServices(),
-          api.listMasters(),
-          api.listSchedules(),
-          api.listAppointments(),
-          api.listNotifications()
-        ]);
-
-      startTransition(() => {
-        setSnapshot({
-          stats,
-          clients,
-          categories,
-          services,
-          masters,
-          schedules,
-          appointments,
-          notifications
-        });
-      });
+      const [stats, clients, categories, services, masters, schedules, appointments, notifications] = await Promise.all([
+        api.getStats(dateRange.start, dateRange.end),
+        api.listClients(),
+        api.listCategories(),
+        api.listServices(),
+        api.listMasters(),
+        api.listSchedules(),
+        api.listAppointments(),
+        api.listNotifications()
+      ]);
+      setSnapshot({ stats, clients, categories, services, masters, schedules, appointments, notifications });
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.status === 401) {
         handleLogout();
@@ -247,8 +217,8 @@ export default function App() {
   }
 
   async function runAction(action: () => Promise<unknown>, message: string) {
-    setStatusMessage("");
     setError("");
+    setStatusMessage("");
     try {
       await action();
       setStatusMessage(message);
@@ -258,7 +228,7 @@ export default function App() {
         handleLogout();
         setError("Сессия администратора истекла. Войдите снова.");
       } else {
-        setError(caughtError instanceof Error ? caughtError.message : "Произошла непредвиденная ошибка.");
+        setError(caughtError instanceof Error ? caughtError.message : "Произошла ошибка.");
       }
     }
   }
@@ -279,31 +249,11 @@ export default function App() {
     }
   }
 
-  async function processNotificationQueue() {
-    setStatusMessage("");
-    setError("");
-    try {
-      const result = await api.processNotifications();
-      setStatusMessage(
-        `Очередь обработана: отправлено ${result.sent}, пропущено ${result.skipped}, ошибок ${result.failed}.`
-      );
-      await refreshAll();
-    } catch (caughtError) {
-      if (caughtError instanceof ApiError && caughtError.status === 401) {
-        handleLogout();
-        setError("Сессия администратора истекла. Войдите снова.");
-      } else {
-        setError(caughtError instanceof Error ? caughtError.message : "Не удалось обработать очередь уведомлений.");
-      }
-    }
-  }
-
   async function previewSlots() {
     if (!appointmentForm.service_id || !appointmentForm.appointment_date) {
-      setError("Выберите услугу и дату перед просмотром свободных слотов.");
+      setError("Выберите услугу и дату перед просмотром свободных окон.");
       return;
     }
-
     try {
       const slots = await api.getAvailableSlots(
         Number(appointmentForm.service_id),
@@ -311,50 +261,32 @@ export default function App() {
         appointmentForm.master_id ? Number(appointmentForm.master_id) : undefined
       );
       setSlotPreview(slots);
-      setStatusMessage(`Найдено слотов: ${slots.length}.`);
+      setStatusMessage(`Найдено свободных окон: ${slots.length}.`);
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Не удалось загрузить свободные слоты.");
+      setError(caughtError instanceof Error ? caughtError.message : "Не удалось загрузить слоты.");
     }
   }
 
-  async function previewRescheduleSlots() {
-    if (!selectedManagedAppointment) {
-      setError("Сначала выберите запись для переноса.");
-      return;
-    }
-
+  async function processNotificationQueue() {
     try {
-      const slots = await api.getAvailableSlots(
-        selectedManagedAppointment.service_id,
-        appointmentManageForm.appointment_date,
-        appointmentManageForm.master_id
-          ? Number(appointmentManageForm.master_id)
-          : undefined
-      );
-      setSlotPreview(slots);
-      setStatusMessage(`Найдено слотов для переноса: ${slots.length}.`);
+      const result = await api.processNotifications();
+      setStatusMessage(`Очередь обработана: отправлено ${result.sent}, пропущено ${result.skipped}, ошибок ${result.failed}.`);
+      await refreshAll();
     } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Не удалось подобрать слоты для переноса.");
+      setError(caughtError instanceof Error ? caughtError.message : "Не удалось обработать очередь.");
     }
   }
 
-  function appointmentClientLabel(appointment: Appointment) {
-    return appointment.client_name
-      ? `${appointment.client_name} (VK ID: ${appointment.client_vk_user_id})`
-      : `VK ID: ${appointment.client_vk_user_id}`;
-  }
+  const selectedAppointment = snapshot.appointments.find((item) => item.id === Number(manageForm.appointment_id));
+  const recentAppointments = snapshot.appointments.slice(0, 8);
+  const recentClients = snapshot.clients.slice(0, 8);
+  const recentSchedules = snapshot.schedules.slice(0, 8);
+  const recentNotifications = snapshot.notifications.slice(0, 10);
 
-  function serviceName(serviceId: number) {
-    return snapshot.services.find((item) => item.id === serviceId)?.name || `Услуга #${serviceId}`;
-  }
-
-  function masterName(masterId: number) {
-    return snapshot.masters.find((item) => item.id === masterId)?.full_name || `Мастер #${masterId}`;
-  }
-
-  const selectedManagedAppointment = snapshot.appointments.find(
-    (item) => item.id === Number(appointmentManageForm.appointment_id)
-  );
+  const clientLabel = (appointment: Appointment) =>
+    appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
+  const serviceName = (serviceId: number) => snapshot.services.find((item) => item.id === serviceId)?.name || `Услуга №${serviceId}`;
+  const masterName = (masterId: number) => snapshot.masters.find((item) => item.id === masterId)?.full_name || `Мастер №${masterId}`;
 
   if (!isAuthenticated) {
     return (
@@ -374,9 +306,9 @@ export default function App() {
     return (
       <main className="app-shell">
         <div className="hero">
-          <p className="eyebrow">Glamour CRM</p>
-          <h1>Подготавливаем рабочее место салона.</h1>
-          <p>Загружаем расписание, записи и активность VK-бота.</p>
+          <p className="eyebrow">Админ-панель Glamour</p>
+          <h1>Подготавливаем данные салона.</h1>
+          <p>Загружаем записи, каталог услуг и контур уведомлений.</p>
         </div>
       </main>
     );
@@ -389,33 +321,21 @@ export default function App() {
 
       <header className="hero">
         <div>
-          <p className="eyebrow">Glamour CRM</p>
-          <h1>Управление салоном в одном окне.</h1>
+          <p className="eyebrow">Админ-панель Glamour</p>
+          <h1>Рабочее место администратора салона.</h1>
           <p>
-            Вы вошли как <strong>{adminName}</strong>. Здесь собраны записи, мастера,
-            услуги, клиенты и рабочий контур VK-бота.
+            Вы вошли как <strong>{adminName}</strong>. Управляйте записями, каталогом, клиентами и
+            уведомлениями для пользователей VK без длинной прокрутки.
           </p>
         </div>
         <div className="hero-actions">
           <label>
             <span>С</span>
-            <input
-              type="date"
-              value={dateRange.start}
-              onChange={(event) =>
-                setDateRange((current) => ({ ...current, start: event.target.value }))
-              }
-            />
+            <input type="date" value={dateRange.start} onChange={(event) => setDateRange((current) => ({ ...current, start: event.target.value }))} />
           </label>
           <label>
             <span>По</span>
-            <input
-              type="date"
-              value={dateRange.end}
-              onChange={(event) =>
-                setDateRange((current) => ({ ...current, end: event.target.value }))
-              }
-            />
+            <input type="date" value={dateRange.end} onChange={(event) => setDateRange((current) => ({ ...current, end: event.target.value }))} />
           </label>
           <button className="button primary" onClick={() => void refreshAll()}>
             {refreshing ? "Обновляем..." : "Обновить"}
@@ -429,24 +349,50 @@ export default function App() {
       {error ? <div className="banner banner-error">{error}</div> : null}
       {statusMessage ? <div className="banner banner-success">{statusMessage}</div> : null}
 
-      <section className="stats-grid">
-        <StatCard label="Записи" value={snapshot.stats?.total_appointments ?? 0} note="Все записи за выбранный период." />
-        <StatCard label="Отмены" value={snapshot.stats?.canceled_appointments ?? 0} note="Отмены клиентов и администратора вместе." />
-        <StatCard label="Новые клиенты" value={snapshot.stats?.new_clients ?? 0} note="Карточки, созданные из VK или админки." />
-        <StatCard label="Покрытие команды" value={`${snapshot.stats?.active_masters ?? 0} мастеров / ${snapshot.stats?.active_services ?? 0} услуг`} note="Активные специалисты и каталог услуг." />
+      <section className="section-tabs">
+        {SECTIONS.map((section) => (
+          <button
+            key={section.id}
+            type="button"
+            className={`section-tab ${activeSection === section.id ? "section-tab-active" : ""}`}
+            onClick={() => setActiveSection(section.id)}
+          >
+            <strong>{section.label}</strong>
+            <span>{section.note}</span>
+          </button>
+        ))}
       </section>
 
-      <div className="dashboard-grid">
-        <SectionPanel title="Управление записями" subtitle="Создавайте записи, просматривайте свободные слоты и контролируйте ближайшие визиты." aside={<button className="button ghost" onClick={() => void previewSlots()}>Показать слоты</button>}>
-          <div className="two-column">
-            <form className="form-grid" onSubmit={(event) => {
-              event.preventDefault();
-              if (!appointmentForm.vk_user_id) {
-                setError("Укажите VK ID клиента для создания записи.");
-                return;
-              }
-              void runAction(async () => {
-                await api.createAppointment({
+      {activeSection === "overview" ? (
+        <>
+          <section className="stats-grid">
+            <StatCard label="Записи" value={snapshot.stats?.total_appointments ?? 0} note="Все визиты за выбранный период." />
+            <StatCard label="Отмены" value={snapshot.stats?.canceled_appointments ?? 0} note="Инициированы клиентом или салоном." />
+            <StatCard label="Новые клиенты" value={snapshot.stats?.new_clients ?? 0} note="Карточки из VK и админки." />
+            <StatCard label="Команда" value={`${snapshot.stats?.active_masters ?? 0} / ${snapshot.stats?.active_services ?? 0}`} note="Активные мастера и услуги." />
+          </section>
+          <div className="dashboard-grid">
+            <SectionPanel title="Ближайшие события" subtitle="Короткий обзор текущего состояния без длинной прокрутки.">
+              <div className="mini-grid">
+                <div className="mini-panel"><h3>Ближайшие записи</h3><ul className="list">{recentAppointments.map((appointment) => <li key={appointment.id}><strong>№{appointment.id} · {serviceName(appointment.service_id)}</strong><span>{clientLabel(appointment)} · {masterName(appointment.master_id)}</span><span>{formatDateTime(appointment.appointment_date, appointment.start_time)} · {appointmentStatusLabel(appointment.status)}</span></li>)}</ul></div>
+                <div className="mini-panel"><h3>Последние уведомления</h3><ul className="list">{recentNotifications.slice(0, 6).map((notification) => <li key={notification.id}><strong>{notificationTypeLabel(notification.type)}</strong><span>{notificationStatusLabel(notification.status)} · №{notification.appointment_id}</span></li>)}</ul></div>
+              </div>
+            </SectionPanel>
+          </div>
+        </>
+      ) : null}
+
+      {activeSection === "appointments" ? (
+        <div className="dashboard-grid">
+          <SectionPanel title="Записи" subtitle="Создание, перенос, смена статуса и быстрый просмотр свободных окон." aside={<button className="button ghost" onClick={() => void previewSlots()}>Показать слоты</button>}>
+            <div className="two-column">
+              <form className="form-grid" onSubmit={(event) => {
+                event.preventDefault();
+                if (!appointmentForm.vk_user_id) {
+                  setError("Укажите VK ID клиента для записи.");
+                  return;
+                }
+                void runAction(() => api.createAppointment({
                   vk_user_id: Number(appointmentForm.vk_user_id),
                   service_id: Number(appointmentForm.service_id),
                   appointment_date: appointmentForm.appointment_date,
@@ -454,489 +400,151 @@ export default function App() {
                   master_id: appointmentForm.master_id ? Number(appointmentForm.master_id) : undefined,
                   comment: appointmentForm.comment || undefined,
                   created_by: "admin"
-                });
-                setAppointmentForm((current) => ({ ...current, comment: "" }));
-                setSlotPreview([]);
-              }, "Запись успешно создана.");
-            }}>
-              <label>
-                <span>VK ID клиента</span>
-                <input
-                  type="number"
-                  value={appointmentForm.vk_user_id}
-                  onChange={(event) => setAppointmentForm((current) => ({ ...current, vk_user_id: event.target.value }))}
-                  placeholder="Например, 237104538"
-                  required
-                />
-              </label>
-              <label>
-                <span>Услуга</span>
-                <select value={appointmentForm.service_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, service_id: event.target.value }))}>
-                  <option value="">Выберите услугу</option>
-                  {snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Мастер</span>
-                <select value={appointmentForm.master_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, master_id: event.target.value }))}>
-                  <option value="">Любой свободный мастер</option>
-                  {snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Дата</span>
-                <input type="date" value={appointmentForm.appointment_date} onChange={(event) => setAppointmentForm((current) => ({ ...current, appointment_date: event.target.value }))} />
-              </label>
-              <label>
-                <span>Время начала</span>
-                <input type="time" value={appointmentForm.start_time.slice(0, 5)} onChange={(event) => setAppointmentForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} />
-              </label>
-              <label className="full-width">
-                <span>Комментарий</span>
-                <input type="text" value={appointmentForm.comment} onChange={(event) => setAppointmentForm((current) => ({ ...current, comment: event.target.value }))} placeholder="Необязательная заметка к визиту" />
-              </label>
-              <button className="button primary full-width" type="submit">Создать запись</button>
-            </form>
-
-            <div className="slot-preview">
-              <h3>Предпросмотр свободных слотов</h3>
-              {slotPreview.length === 0 ? <p>Слоты пока не загружены.</p> : <ul>{slotPreview.slice(0, 8).map((slot) => <li key={`${slot.work_date}-${slot.start_time}`}><strong>{slot.start_time.slice(0, 5)}</strong> - {slot.end_time.slice(0, 5)}, мастера: {slot.master_ids.join(", ")}</li>)}</ul>}
+                }), "Запись создана, клиент уведомлен.");
+              }}>
+                <label><span>VK ID клиента</span><input type="number" value={appointmentForm.vk_user_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, vk_user_id: event.target.value }))} required /></label>
+                <label><span>Услуга</span><select value={appointmentForm.service_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, service_id: event.target.value }))}><option value="">Выберите услугу</option>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+                <label><span>Мастер</span><select value={appointmentForm.master_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Любой свободный мастер</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
+                <label><span>Дата</span><input type="date" value={appointmentForm.appointment_date} onChange={(event) => setAppointmentForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
+                <label><span>Время</span><input type="time" value={appointmentForm.start_time.slice(0, 5)} onChange={(event) => setAppointmentForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
+                <label className="full-width"><span>Комментарий</span><input value={appointmentForm.comment} onChange={(event) => setAppointmentForm((current) => ({ ...current, comment: event.target.value }))} /></label>
+                <button className="button primary full-width" type="submit">Создать запись</button>
+              </form>
+              <div className="slot-preview"><h3>Свободные окна</h3>{slotPreview.length === 0 ? <p>Пока пусто. Выберите услугу и дату, затем нажмите кнопку просмотра.</p> : <ul>{slotPreview.slice(0, 8).map((slot) => <li key={`${slot.work_date}-${slot.start_time}`}><strong>{slot.start_time.slice(0, 5)}-{slot.end_time.slice(0, 5)}</strong><span>Мастера: {slot.master_ids.join(", ")}</span></li>)}</ul>}</div>
             </div>
-          </div>
-
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Клиент</th>
-                  <th>Услуга</th>
-                  <th>Мастер</th>
-                  <th>Статус</th>
-                  <th>Действие</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.appointments.slice(0, 8).map((appointment) => (
-                  <tr key={appointment.id}>
-                    <td>{appointment.appointment_date} {appointment.start_time.slice(0, 5)}</td>
-                    <td>{appointmentClientLabel(appointment)}</td>
-                    <td>{serviceName(appointment.service_id)}</td>
-                    <td>{masterName(appointment.master_id)}</td>
-                    <td><span className={`status-chip status-${appointment.status}`}>{appointmentStatusLabel(appointment.status)}</span></td>
-                    <td><button className="button subtle" onClick={() => void runAction(() => api.cancelAppointment(appointment.id, { actor_role: "admin", reason: "Отменено из панели администратора" }), `Запись #${appointment.id} отменена.`)}>Отменить</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="two-column" style={{ marginTop: "16px" }}>
-            <form
-              className="form-grid compact"
-              onSubmit={(event) => {
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Дата</th><th>Клиент</th><th>Услуга</th><th>Мастер</th><th>Статус</th><th>Действие</th></tr></thead>
+                <tbody>{recentAppointments.map((appointment) => <tr key={appointment.id}><td>{formatDateTime(appointment.appointment_date, appointment.start_time)}</td><td>{clientLabel(appointment)}</td><td>{serviceName(appointment.service_id)}</td><td>{masterName(appointment.master_id)}</td><td><span className={`status-chip status-${appointment.status}`}>{appointmentStatusLabel(appointment.status)}</span></td><td><button className="button subtle" onClick={() => void runAction(() => api.cancelAppointment(appointment.id, { actor_role: "admin", reason: "Отменено из админ-панели" }), `Запись №${appointment.id} отменена.`)}>Отменить</button></td></tr>)}</tbody>
+              </table>
+            </div>
+            <div className="two-column section-gap">
+              <form className="form-grid compact" onSubmit={(event) => {
                 event.preventDefault();
-                if (!appointmentManageForm.appointment_id) {
+                if (!manageForm.appointment_id) {
                   setError("Выберите запись для переноса.");
                   return;
                 }
-                void runAction(
-                  async () => {
-                    await api.rescheduleAppointment(Number(appointmentManageForm.appointment_id), {
-                      appointment_date: appointmentManageForm.appointment_date,
-                      start_time: appointmentManageForm.start_time,
-                      master_id: appointmentManageForm.master_id
-                        ? Number(appointmentManageForm.master_id)
-                        : undefined,
-                      comment: appointmentManageForm.comment || undefined,
-                      actor_role: "admin"
-                    });
-                  },
-                  `Запись #${appointmentManageForm.appointment_id} перенесена.`
-                );
-              }}
-            >
-              <h3>Перенос визита</h3>
-              <label className="full-width">
-                <span>Запись</span>
-                <select
-                  value={appointmentManageForm.appointment_id}
-                  onChange={(event) => {
-                    const appointment = snapshot.appointments.find(
-                      (item) => item.id === Number(event.target.value)
-                    );
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      appointment_id: event.target.value,
-                      appointment_date: appointment?.appointment_date || current.appointment_date,
-                      start_time: appointment?.start_time || current.start_time,
-                      master_id: appointment ? String(appointment.master_id) : "",
-                      status: appointment?.status || current.status,
-                      comment: appointment?.comment || ""
-                    }));
-                  }}
-                >
-                  <option value="">Выберите запись</option>
-                  {snapshot.appointments.map((appointment) => (
-                    <option key={appointment.id} value={appointment.id}>
-                      #{appointment.id} · {appointmentClientLabel(appointment)} ·{" "}
-                      {appointment.appointment_date} {appointment.start_time.slice(0, 5)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Новая дата</span>
-                <input
-                  type="date"
-                  value={appointmentManageForm.appointment_date}
-                  onChange={(event) =>
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      appointment_date: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                <span>Новое время</span>
-                <input
-                  type="time"
-                  value={appointmentManageForm.start_time.slice(0, 5)}
-                  onChange={(event) =>
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      start_time: `${event.target.value}:00`
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                <span>Мастер</span>
-                <select
-                  value={appointmentManageForm.master_id}
-                  onChange={(event) =>
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      master_id: event.target.value
-                    }))
-                  }
-                >
-                  <option value="">Сохранить текущего или подобрать автоматически</option>
-                  {snapshot.masters.map((master) => (
-                    <option key={master.id} value={master.id}>
-                      {master.full_name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span>Комментарий</span>
-                <input
-                  value={appointmentManageForm.comment}
-                  onChange={(event) =>
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      comment: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <button
-                className="button ghost"
-                type="button"
-                onClick={() => void previewRescheduleSlots()}
-              >
-                Показать новые слоты
-              </button>
-              <button className="button primary" type="submit">
-                Сохранить перенос
-              </button>
-            </form>
-
-            <form
-              className="form-grid compact"
-              onSubmit={(event) => {
+                void runAction(() => api.rescheduleAppointment(Number(manageForm.appointment_id), {
+                  appointment_date: manageForm.appointment_date,
+                  start_time: manageForm.start_time,
+                  master_id: manageForm.master_id ? Number(manageForm.master_id) : undefined,
+                  comment: manageForm.comment || undefined,
+                  actor_role: "admin"
+                }), `Запись №${manageForm.appointment_id} перенесена.`);
+              }}>
+                <h3>Перенос</h3>
+                <label className="full-width"><span>Запись</span><select value={manageForm.appointment_id} onChange={(event) => {
+                  const appointment = snapshot.appointments.find((item) => item.id === Number(event.target.value));
+                  setManageForm((current) => ({
+                    ...current,
+                    appointment_id: event.target.value,
+                    appointment_date: appointment?.appointment_date || current.appointment_date,
+                    start_time: appointment?.start_time || current.start_time,
+                    master_id: appointment ? String(appointment.master_id) : "",
+                    status: appointment?.status || current.status,
+                    comment: appointment?.comment || ""
+                  }));
+                }}><option value="">Выберите запись</option>{snapshot.appointments.map((appointment) => <option key={appointment.id} value={appointment.id}>№{appointment.id} · {clientLabel(appointment)} · {formatDateTime(appointment.appointment_date, appointment.start_time)}</option>)}</select></label>
+                <label><span>Новая дата</span><input type="date" value={manageForm.appointment_date} onChange={(event) => setManageForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
+                <label><span>Новое время</span><input type="time" value={manageForm.start_time.slice(0, 5)} onChange={(event) => setManageForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
+                <label><span>Мастер</span><select value={manageForm.master_id} onChange={(event) => setManageForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Сохранить текущего</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
+                <label><span>Комментарий</span><input value={manageForm.comment} onChange={(event) => setManageForm((current) => ({ ...current, comment: event.target.value }))} /></label>
+                <button className="button primary" type="submit">Сохранить перенос</button>
+              </form>
+              <form className="form-grid compact" onSubmit={(event) => {
                 event.preventDefault();
-                if (!appointmentManageForm.appointment_id) {
+                if (!manageForm.appointment_id) {
                   setError("Выберите запись для смены статуса.");
                   return;
                 }
-                void runAction(
-                  async () => {
-                    await api.updateAppointmentStatus(Number(appointmentManageForm.appointment_id), {
-                      status: appointmentManageForm.status,
-                      actor_role: "admin",
-                      comment: appointmentManageForm.comment || undefined
-                    });
-                  },
-                  `Статус записи #${appointmentManageForm.appointment_id} обновлен.`
-                );
-              }}
-            >
-              <h3>Смена статуса</h3>
-              <label className="full-width">
-                <span>Выбранная запись</span>
-                <div className="slot-preview">
-                  {selectedManagedAppointment ? (
-                    <p>
-                      #{selectedManagedAppointment.id} · {appointmentClientLabel(selectedManagedAppointment)} ·{" "}
-                      {serviceName(selectedManagedAppointment.service_id)} ·{" "}
-                      {selectedManagedAppointment.appointment_date}{" "}
-                      {selectedManagedAppointment.start_time.slice(0, 5)}
-                    </p>
-                  ) : (
-                    <p>Запись пока не выбрана.</p>
-                  )}
-                </div>
-              </label>
-              <label>
-                <span>Статус</span>
-                <select
-                  value={appointmentManageForm.status}
-                  onChange={(event) =>
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      status: event.target.value
-                    }))
-                  }
-                >
-                  <option value="confirmed">Подтверждена</option>
-                  <option value="completed">Выполнена</option>
-                  <option value="no_show">Не пришел</option>
-                  <option value="canceled_by_admin">Отменена администратором</option>
-                </select>
-              </label>
-              <label className="full-width">
-                <span>Комментарий к статусу</span>
-                <input
-                  value={appointmentManageForm.comment}
-                  onChange={(event) =>
-                    setAppointmentManageForm((current) => ({
-                      ...current,
-                      comment: event.target.value
-                    }))
-                  }
-                />
-              </label>
-              <button className="button primary full-width" type="submit">
-                Обновить статус
-              </button>
-            </form>
-          </div>
-        </SectionPanel>
-
-        <SectionPanel title="Каталог и команда" subtitle="Поддерживайте категории, услуги и профили мастеров, которые используются ботом VK и модулем записи.">
-          <div className="three-column">
-            <form className="form-grid compact" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(async () => {
-                await api.createCategory({ name: categoryForm.name, description: categoryForm.description || undefined });
-                setCategoryForm({ name: "", description: "" });
-              }, "Категория услуг создана.");
-            }}>
-              <h3>Новая категория</h3>
-              <label>
-                <span>Название</span>
-                <input value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} />
-              </label>
-              <label>
-                <span>Описание</span>
-                <input value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} />
-              </label>
-              <button className="button primary" type="submit">Добавить категорию</button>
-            </form>
-
-            <form className="form-grid compact" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(async () => {
-                await api.createService({
-                  category_id: Number(serviceForm.category_id),
-                  name: serviceForm.name,
-                  description: serviceForm.description || undefined,
-                  duration_minutes: Number(serviceForm.duration_minutes),
-                  price: serviceForm.price
-                });
-                setServiceForm({ category_id: serviceForm.category_id, name: "", description: "", duration_minutes: "60", price: "1500.00" });
-              }, "Услуга создана.");
-            }}>
-              <h3>Новая услуга</h3>
-              <label>
-                <span>Категория</span>
-                <select value={serviceForm.category_id} onChange={(event) => setServiceForm((current) => ({ ...current, category_id: event.target.value }))}>
-                  <option value="">Выберите категорию</option>
-                  {snapshot.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Название</span>
-                <input value={serviceForm.name} onChange={(event) => setServiceForm((current) => ({ ...current, name: event.target.value }))} />
-              </label>
-              <label>
-                <span>Длительность (мин)</span>
-                <input type="number" value={serviceForm.duration_minutes} onChange={(event) => setServiceForm((current) => ({ ...current, duration_minutes: event.target.value }))} />
-              </label>
-              <label>
-                <span>Цена</span>
-                <input value={serviceForm.price} onChange={(event) => setServiceForm((current) => ({ ...current, price: event.target.value }))} />
-              </label>
-              <button className="button primary" type="submit">Добавить услугу</button>
-            </form>
-
-            <form className="form-grid compact" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(async () => {
-                await api.createMaster({
-                  full_name: masterForm.full_name,
-                  specialization: masterForm.specialization || undefined,
-                  phone: masterForm.phone || undefined,
-                  experience_years: Number(masterForm.experience_years),
-                  service_ids: masterForm.service_ids
-                });
-                setMasterForm({ full_name: "", specialization: "", phone: "", experience_years: "3", service_ids: [] });
-              }, "Мастер добавлен.");
-            }}>
-              <h3>Новый мастер</h3>
-              <label>
-                <span>ФИО</span>
-                <input value={masterForm.full_name} onChange={(event) => setMasterForm((current) => ({ ...current, full_name: event.target.value }))} />
-              </label>
-              <label>
-                <span>Специализация</span>
-                <input value={masterForm.specialization} onChange={(event) => setMasterForm((current) => ({ ...current, specialization: event.target.value }))} />
-              </label>
-              <label>
-                <span>Набор услуг</span>
-                <select multiple value={masterForm.service_ids.map(String)} onChange={(event) => {
-                  const values = Array.from(event.target.selectedOptions).map((option) => Number(option.value));
-                  setMasterForm((current) => ({ ...current, service_ids: values }));
-                }}>
-                  {snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}
-                </select>
-              </label>
-              <button className="button primary" type="submit">Добавить мастера</button>
-            </form>
-          </div>
-        </SectionPanel>
-
-        <SectionPanel title="Клиенты и график" subtitle="Ведите клиентскую базу и назначайте рабочие дни для каждого мастера.">
-          <div className="two-column">
-            <form className="form-grid compact" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(async () => {
-                await api.createClient({
-                  vk_user_id: Number(clientForm.vk_user_id),
-                  full_name: clientForm.full_name || undefined,
-                  phone: clientForm.phone || undefined
-                });
-                setClientForm({ vk_user_id: "", full_name: "", phone: "" });
-              }, "Клиент добавлен.");
-            }}>
-              <h3>Новый клиент</h3>
-              <label>
-                <span>ID пользователя VK</span>
-                <input type="number" value={clientForm.vk_user_id} onChange={(event) => setClientForm((current) => ({ ...current, vk_user_id: event.target.value }))} />
-              </label>
-              <label>
-                <span>ФИО</span>
-                <input value={clientForm.full_name} onChange={(event) => setClientForm((current) => ({ ...current, full_name: event.target.value }))} />
-              </label>
-              <label>
-                <span>Телефон</span>
-                <input value={clientForm.phone} onChange={(event) => setClientForm((current) => ({ ...current, phone: event.target.value }))} />
-              </label>
-              <button className="button primary" type="submit">Добавить клиента</button>
-            </form>
-
-            <form className="form-grid compact" onSubmit={(event) => {
-              event.preventDefault();
-              void runAction(async () => {
-                await api.createSchedule({
-                  master_id: Number(scheduleForm.master_id),
-                  work_date: scheduleForm.work_date,
-                  start_time: scheduleForm.start_time,
-                  end_time: scheduleForm.end_time
-                });
-              }, "Рабочий день добавлен.");
-            }}>
-              <h3>Новый рабочий день</h3>
-              <label>
-                <span>Мастер</span>
-                <select value={scheduleForm.master_id} onChange={(event) => setScheduleForm((current) => ({ ...current, master_id: event.target.value }))}>
-                  <option value="">Выберите мастера</option>
-                  {snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}
-                </select>
-              </label>
-              <label>
-                <span>Дата</span>
-                <input type="date" value={scheduleForm.work_date} onChange={(event) => setScheduleForm((current) => ({ ...current, work_date: event.target.value }))} />
-              </label>
-              <label>
-                <span>Начало</span>
-                <input type="time" value={scheduleForm.start_time.slice(0, 5)} onChange={(event) => setScheduleForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} />
-              </label>
-              <label>
-                <span>Конец</span>
-                <input type="time" value={scheduleForm.end_time.slice(0, 5)} onChange={(event) => setScheduleForm((current) => ({ ...current, end_time: `${event.target.value}:00` }))} />
-              </label>
-              <button className="button primary" type="submit">Добавить рабочий день</button>
-            </form>
-          </div>
-
-          <div className="mini-grid">
-            <div className="mini-panel">
-              <h3>Последние клиенты</h3>
-              <ul className="list">
-                {snapshot.clients.slice(0, 6).map((client) => <li key={client.id}><strong>{client.full_name || `VK ID: ${client.vk_user_id}`}</strong><span>{client.phone ? `${client.phone} · VK ID: ${client.vk_user_id}` : `VK ID: ${client.vk_user_id}`}</span></li>)}
-              </ul>
+                void runAction(() => api.updateAppointmentStatus(Number(manageForm.appointment_id), {
+                  status: manageForm.status,
+                  actor_role: "admin",
+                  comment: manageForm.comment || undefined
+                }), `Статус записи №${manageForm.appointment_id} обновлен.`);
+              }}>
+                <h3>Статус</h3>
+                <label className="full-width"><span>Выбранная запись</span><div className="slot-preview">{selectedAppointment ? <p>№{selectedAppointment.id} · {clientLabel(selectedAppointment)} · {serviceName(selectedAppointment.service_id)} · {formatDateTime(selectedAppointment.appointment_date, selectedAppointment.start_time)}</p> : <p>Запись пока не выбрана.</p>}</div></label>
+                <label><span>Новый статус</span><select value={manageForm.status} onChange={(event) => setManageForm((current) => ({ ...current, status: event.target.value }))}><option value="confirmed">Подтверждена</option><option value="completed">Завершена</option><option value="no_show">Неявка</option><option value="canceled_by_admin">Отменена салоном</option></select></label>
+                <label className="full-width"><span>Комментарий</span><input value={manageForm.comment} onChange={(event) => setManageForm((current) => ({ ...current, comment: event.target.value }))} /></label>
+                <button className="button primary full-width" type="submit">Обновить статус</button>
+              </form>
             </div>
-            <div className="mini-panel">
-              <h3>Ближайшие рабочие дни</h3>
-              <ul className="list">
-                {snapshot.schedules.slice(0, 6).map((schedule) => <li key={schedule.id}><strong>{masterName(schedule.master_id)}</strong><span>{schedule.work_date} - {schedule.start_time.slice(0, 5)}-{schedule.end_time.slice(0, 5)}</span></li>)}
-              </ul>
-            </div>
-          </div>
-        </SectionPanel>
+          </SectionPanel>
+        </div>
+      ) : null}
 
-        <SectionPanel
-          title="Очередь уведомлений"
-          subtitle="Следите за подтверждениями записей и напоминаниями, которые формирует система."
-          aside={
-            <button
-              className="button ghost"
-              onClick={() => void processNotificationQueue()}
-            >
-              Обработать очередь
-            </button>
-          }
-        >
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Отправить в</th>
-                  <th>Тип</th>
-                  <th>Статус</th>
-                  <th>Запись</th>
-                  <th>Сообщение</th>
-                </tr>
-              </thead>
-              <tbody>
-                {snapshot.notifications.slice(0, 8).map((notification) => (
-                  <tr key={notification.id}>
-                    <td>{new Date(notification.send_at).toLocaleString()}</td>
-                    <td>{notificationTypeLabel(notification.type)}</td>
-                    <td>{notificationStatusLabel(notification.status)}</td>
-                    <td>#{notification.appointment_id}</td>
-                    <td>{notification.message || "Текст сообщения отсутствует"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </SectionPanel>
-      </div>
+      {activeSection === "catalog" ? (
+        <div className="dashboard-grid">
+          <SectionPanel title="Каталог" subtitle="Категории, услуги и мастера, которые видит клиент во VK.">
+            <div className="three-column">
+              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createCategory({ name: categoryForm.name, description: categoryForm.description || undefined }), "Категория создана."); }}>
+                <h3>Категория</h3>
+                <label><span>Название</span><input value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                <label><span>Описание</span><input value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} /></label>
+                <button className="button primary" type="submit">Добавить категорию</button>
+              </form>
+              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createService({ category_id: Number(serviceForm.category_id), name: serviceForm.name, description: serviceForm.description || undefined, duration_minutes: Number(serviceForm.duration_minutes), price: serviceForm.price }), "Услуга создана."); }}>
+                <h3>Услуга</h3>
+                <label><span>Категория</span><select value={serviceForm.category_id} onChange={(event) => setServiceForm((current) => ({ ...current, category_id: event.target.value }))}><option value="">Выберите категорию</option>{snapshot.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+                <label><span>Название</span><input value={serviceForm.name} onChange={(event) => setServiceForm((current) => ({ ...current, name: event.target.value }))} /></label>
+                <label><span>Длительность</span><input type="number" value={serviceForm.duration_minutes} onChange={(event) => setServiceForm((current) => ({ ...current, duration_minutes: event.target.value }))} /></label>
+                <label><span>Цена</span><input value={serviceForm.price} onChange={(event) => setServiceForm((current) => ({ ...current, price: event.target.value }))} /></label>
+                <button className="button primary" type="submit">Добавить услугу</button>
+              </form>
+              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createMaster({ full_name: masterForm.full_name, specialization: masterForm.specialization || undefined, phone: masterForm.phone || undefined, experience_years: Number(masterForm.experience_years), service_ids: masterForm.service_ids }), "Мастер добавлен."); }}>
+                <h3>Мастер</h3>
+                <label><span>ФИО</span><input value={masterForm.full_name} onChange={(event) => setMasterForm((current) => ({ ...current, full_name: event.target.value }))} /></label>
+                <label><span>Специализация</span><input value={masterForm.specialization} onChange={(event) => setMasterForm((current) => ({ ...current, specialization: event.target.value }))} /></label>
+                <label><span>Услуги мастера</span><select multiple value={masterForm.service_ids.map(String)} onChange={(event) => setMasterForm((current) => ({ ...current, service_ids: Array.from(event.target.selectedOptions).map((option) => Number(option.value)) }))}>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
+                <button className="button primary" type="submit">Добавить мастера</button>
+              </form>
+            </div>
+          </SectionPanel>
+        </div>
+      ) : null}
+
+      {activeSection === "clients" ? (
+        <div className="dashboard-grid">
+          <SectionPanel title="Клиенты и график" subtitle="Ведение базы клиентов и расписания команды.">
+            <div className="two-column">
+              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createClient({ vk_user_id: Number(clientForm.vk_user_id), full_name: clientForm.full_name || undefined, phone: clientForm.phone || undefined }), "Клиент добавлен."); }}>
+                <h3>Клиент</h3>
+                <label><span>VK ID</span><input type="number" value={clientForm.vk_user_id} onChange={(event) => setClientForm((current) => ({ ...current, vk_user_id: event.target.value }))} /></label>
+                <label><span>Имя</span><input value={clientForm.full_name} onChange={(event) => setClientForm((current) => ({ ...current, full_name: event.target.value }))} /></label>
+                <label><span>Телефон</span><input value={clientForm.phone} onChange={(event) => setClientForm((current) => ({ ...current, phone: event.target.value }))} /></label>
+                <button className="button primary" type="submit">Добавить клиента</button>
+              </form>
+              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createSchedule({ master_id: Number(scheduleForm.master_id), work_date: scheduleForm.work_date, start_time: scheduleForm.start_time, end_time: scheduleForm.end_time }), "График мастера добавлен."); }}>
+                <h3>Рабочий день</h3>
+                <label><span>Мастер</span><select value={scheduleForm.master_id} onChange={(event) => setScheduleForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Выберите мастера</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
+                <label><span>Дата</span><input type="date" value={scheduleForm.work_date} onChange={(event) => setScheduleForm((current) => ({ ...current, work_date: event.target.value }))} /></label>
+                <label><span>Начало</span><input type="time" value={scheduleForm.start_time.slice(0, 5)} onChange={(event) => setScheduleForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
+                <label><span>Конец</span><input type="time" value={scheduleForm.end_time.slice(0, 5)} onChange={(event) => setScheduleForm((current) => ({ ...current, end_time: `${event.target.value}:00` }))} /></label>
+                <button className="button primary" type="submit">Добавить график</button>
+              </form>
+            </div>
+            <div className="mini-grid">
+              <div className="mini-panel"><h3>Последние клиенты</h3><ul className="list">{recentClients.map((client) => <li key={client.id}><strong>{client.full_name || `VK ID ${client.vk_user_id}`}</strong><span>{client.phone || "Телефон не указан"}</span></li>)}</ul></div>
+              <div className="mini-panel"><h3>Ближайшие рабочие дни</h3><ul className="list">{recentSchedules.map((schedule) => <li key={schedule.id}><strong>{masterName(schedule.master_id)}</strong><span>{schedule.work_date} · {schedule.start_time.slice(0, 5)}-{schedule.end_time.slice(0, 5)}</span></li>)}</ul></div>
+            </div>
+          </SectionPanel>
+        </div>
+      ) : null}
+
+      {activeSection === "notifications" ? (
+        <div className="dashboard-grid">
+          <SectionPanel title="Уведомления" subtitle="Клиент получает сообщения при создании записи, переносе, отмене и смене статуса." aside={<button className="button ghost" onClick={() => void processNotificationQueue()}>Обработать очередь</button>}>
+            <div className="table-wrap">
+              <table>
+                <thead><tr><th>Время</th><th>Тип</th><th>Статус</th><th>Запись</th><th>Сообщение</th></tr></thead>
+                <tbody>{recentNotifications.map((notification) => <tr key={notification.id}><td>{new Date(notification.send_at).toLocaleString()}</td><td>{notificationTypeLabel(notification.type)}</td><td><span className={`status-chip status-${notification.status}`}>{notificationStatusLabel(notification.status)}</span></td><td>№{notification.appointment_id}</td><td>{notification.message || "Текст сообщения будет сформирован при отправке."}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </SectionPanel>
+        </div>
+      ) : null}
     </main>
   );
 }

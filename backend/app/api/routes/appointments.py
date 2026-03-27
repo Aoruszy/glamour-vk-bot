@@ -62,10 +62,10 @@ def list_my_appointments(
     if resolved_client_id is None and vk_user_id is not None:
         client = db.scalar(select(Client).where(Client.vk_user_id == vk_user_id))
         if not client:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Клиент не найден.")
         resolved_client_id = client.id
     if resolved_client_id is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Provide client_id or vk_user_id.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Передайте client_id или vk_user_id.")
     return list(
         db.scalars(
             select(Appointment)
@@ -89,7 +89,7 @@ def create_appointment_endpoint(payload: AppointmentCreate, db: Session = Depend
 def get_appointment(appointment_id: int, db: Session = Depends(get_db)) -> Appointment:
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена.")
     return appointment
 
 
@@ -97,7 +97,7 @@ def get_appointment(appointment_id: int, db: Session = Depends(get_db)) -> Appoi
 def cancel_appointment_endpoint(appointment_id: int, payload: AppointmentCancel, db: Session = Depends(get_db)) -> Appointment:
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена.")
     return cancel_appointment(db, appointment=appointment, actor_role=payload.actor_role, reason=payload.reason)
 
 
@@ -105,7 +105,7 @@ def cancel_appointment_endpoint(appointment_id: int, payload: AppointmentCancel,
 def reschedule_appointment_endpoint(appointment_id: int, payload: AppointmentReschedule, db: Session = Depends(get_db)) -> Appointment:
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена.")
     return reschedule_appointment(db, appointment=appointment, payload=payload)
 
 
@@ -117,5 +117,5 @@ def update_appointment_status_endpoint(
 ) -> Appointment:
     appointment = db.get(Appointment, appointment_id)
     if not appointment:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appointment not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена.")
     return update_appointment_status(db, appointment=appointment, payload=payload)

@@ -20,7 +20,7 @@ def list_clients(db: Session = Depends(get_db)) -> list[Client]:
 def create_client(payload: ClientCreate, db: Session = Depends(get_db)) -> Client:
     existing = db.scalar(select(Client).where(Client.vk_user_id == payload.vk_user_id))
     if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Client with this VK ID already exists.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Клиент с таким VK ID уже существует.")
     client = Client(**payload.model_dump())
     db.add(client)
     db.flush()
@@ -34,7 +34,7 @@ def create_client(payload: ClientCreate, db: Session = Depends(get_db)) -> Clien
 def get_client_by_vk(vk_user_id: int, db: Session = Depends(get_db)) -> Client:
     client = db.scalar(select(Client).where(Client.vk_user_id == vk_user_id))
     if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Клиент не найден.")
     return client
 
 
@@ -42,7 +42,7 @@ def get_client_by_vk(vk_user_id: int, db: Session = Depends(get_db)) -> Client:
 def get_client(client_id: int, db: Session = Depends(get_db)) -> Client:
     client = db.get(Client, client_id)
     if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Клиент не найден.")
     return client
 
 
@@ -50,7 +50,7 @@ def get_client(client_id: int, db: Session = Depends(get_db)) -> Client:
 def update_client(client_id: int, payload: ClientUpdate, db: Session = Depends(get_db)) -> Client:
     client = db.get(Client, client_id)
     if not client:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Клиент не найден.")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(client, field, value)
     log_action(db, user_role=ActorRole.ADMIN, action="client_updated", entity_type="client", entity_id=client.id)

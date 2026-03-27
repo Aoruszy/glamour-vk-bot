@@ -41,7 +41,7 @@ def create_service_category(payload: ServiceCategoryCreate, db: Session = Depend
 def update_service_category(category_id: int, payload: ServiceCategoryUpdate, db: Session = Depends(get_db)) -> ServiceCategory:
     category = db.get(ServiceCategory, category_id)
     if not category:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Категория не найдена.")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(category, field, value)
     log_action(db, user_role=ActorRole.ADMIN, action="service_category_updated", entity_type="service_category", entity_id=category.id)
@@ -67,7 +67,7 @@ def list_services(
 @router.post("/services", response_model=ServiceRead, status_code=status.HTTP_201_CREATED)
 def create_service(payload: ServiceCreate, db: Session = Depends(get_db)) -> Service:
     if not db.get(ServiceCategory, payload.category_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Категория не найдена.")
     service = Service(**payload.model_dump())
     db.add(service)
     db.flush()
@@ -81,7 +81,7 @@ def create_service(payload: ServiceCreate, db: Session = Depends(get_db)) -> Ser
 def get_service(service_id: int, db: Session = Depends(get_db)) -> Service:
     service = db.get(Service, service_id)
     if not service:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Услуга не найдена.")
     return service
 
 
@@ -89,9 +89,9 @@ def get_service(service_id: int, db: Session = Depends(get_db)) -> Service:
 def update_service(service_id: int, payload: ServiceUpdate, db: Session = Depends(get_db)) -> Service:
     service = db.get(Service, service_id)
     if not service:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Услуга не найдена.")
     if payload.category_id is not None and not db.get(ServiceCategory, payload.category_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Category not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Категория не найдена.")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(service, field, value)
     log_action(db, user_role=ActorRole.ADMIN, action="service_updated", entity_type="service", entity_id=service.id)

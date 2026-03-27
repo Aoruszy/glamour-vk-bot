@@ -13,6 +13,23 @@ from app.models.service import Service
 from app.services.vk_api import VkApiClient
 
 
+def _appointment_datetime_label(appointment: Appointment) -> str:
+    return f"{appointment.appointment_date.strftime('%d.%m.%Y')} в {appointment.start_time.strftime('%H:%M')}"
+
+
+def _appointment_status_label(status: str) -> str:
+    labels = {
+        "new": "новая",
+        "confirmed": "подтверждена",
+        "completed": "завершена",
+        "canceled_by_client": "отменена клиентом",
+        "canceled_by_admin": "отменена салоном",
+        "rescheduled": "перенесена",
+        "no_show": "отмечена как неявка",
+    }
+    return labels.get(status, status)
+
+
 def refresh_appointment_notifications(db: Session, appointment: Appointment) -> None:
     db.execute(delete(Notification).where(Notification.appointment_id == appointment.id))
 
@@ -24,7 +41,7 @@ def refresh_appointment_notifications(db: Session, appointment: Appointment) -> 
             type=NotificationType.BOOKING_CONFIRMATION,
             send_at=now,
             status=NotificationStatus.PENDING,
-            message="Booking created and confirmed in Glamour.",
+            message="Запись создана и подтверждена.",
         )
     ]
 
@@ -36,7 +53,7 @@ def refresh_appointment_notifications(db: Session, appointment: Appointment) -> 
                 type=NotificationType.REMINDER_24H,
                 send_at=reminder_24h_at,
                 status=NotificationStatus.PENDING,
-                message="Appointment reminder: 24 hours remaining.",
+                message="Напоминание о записи за 24 часа.",
             )
         )
 
@@ -48,7 +65,7 @@ def refresh_appointment_notifications(db: Session, appointment: Appointment) -> 
                 type=NotificationType.REMINDER_2H,
                 send_at=reminder_2h_at,
                 status=NotificationStatus.PENDING,
-                message="Appointment reminder: 2 hours remaining.",
+                message="Напоминание о записи за 2 часа.",
             )
         )
 
@@ -76,25 +93,28 @@ def append_status_notification(
 def _render_notification_message(db: Session, notification: Notification) -> str:
     appointment = db.get(Appointment, notification.appointment_id)
     if not appointment:
-        return notification.message or "Notification target not found."
+        return notification.message or "Запись для уведомления не найдена."
 
     service = db.get(Service, appointment.service_id)
     master = db.get(Master, appointment.master_id)
-    start_label = f"{appointment.appointment_date} {appointment.start_time.strftime('%H:%M')}"
+    start_label = _appointment_datetime_label(appointment)
     service_name = service.name if service else "услуга"
     master_name = master.full_name if master else "мастер"
 
     if notification.type == NotificationType.BOOKING_CONFIRMATION:
-        return f"Ваша запись подтверждена: {service_name}, {master_name}, {start_label}."
+        return f"Ваша запись подтверждена: {service_name}, мастер {master_name}, {start_label}."
     if notification.type == NotificationType.REMINDER_24H:
-        return f"Напоминание: через 24 часа у вас запись на {service_name} к {master_name} в {start_label}."
+        return f"Напоминание: через 24 часа у вас запись на {service_name} к мастеру {master_name}, {start_label}."
     if notification.type == NotificationType.REMINDER_2H:
-        return f"Напоминание: через 2 часа у вас запись на {service_name} к {master_name} в {start_label}."
+        return f"Напоминание: через 2 часа у вас запись на {service_name} к мастеру {master_name}, {start_label}."
     if notification.type == NotificationType.CANCELLATION:
-        return f"Запись на {service_name} в {start_label} была отменена."
+        return f"Ваша запись на {service_name}, {start_label}, была отменена."
     if notification.type == NotificationType.RESCHEDULE:
-        return f"Запись на {service_name} была перенесена. Новое время: {start_label}."
-    return notification.message or "Обновление по вашей записи."
+        return f"Ваша запись на {service_name} была перенесена. Новое время: {start_label}."
+    if notification.type == NotificationType.STATUS_UPDATE:
+        status_label = _appointment_status_label(appointment.status.value)
+        return f"Статус вашей записи на {service_name}, {start_label}, обновлен: {status_label}."
+    return notification.message or "По вашей записи есть обновление."
 
 
 def process_due_notifications(db: Session, *, vk_client: VkApiClient | None = None) -> dict[str, int]:
@@ -142,7 +162,7 @@ def process_due_notifications(db: Session, *, vk_client: VkApiClient | None = No
             sent += 1
         except Exception as exc:  # noqa: BLE001
             notification.status = NotificationStatus.FAILED
-            notification.message = f"{notification.message or ''}\nDelivery error: {exc}".strip()
+            notification.message = f"{notification.message or ''}\nОшибка доставки: {exc}".strip()
             failed += 1
 
     db.commit()
@@ -152,3 +172,14 @@ def process_due_notifications(db: Session, *, vk_client: VkApiClient | None = No
         "skipped": skipped,
         "failed": failed,
     }
+
+
+def deliver_due_notifications(db: Session) -> dict[str, int]:
+    settings = get_settings()
+    if not settings.vk_access_token:
+        return {"processed": 0, "sent": 0, "skipped": 0, "failed": 0}
+    try:
+        return process_due_notifications(db)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        return {"processed": 0, "sent": 0, "skipped": 0, "failed": 1}

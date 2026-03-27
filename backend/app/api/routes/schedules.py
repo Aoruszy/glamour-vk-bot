@@ -31,12 +31,12 @@ def list_schedules(
 @router.post("", response_model=ScheduleRead, status_code=status.HTTP_201_CREATED)
 def create_schedule(payload: ScheduleCreate, db: Session = Depends(get_db)) -> Schedule:
     if not db.get(Master, payload.master_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Мастер не найден.")
     if payload.start_time >= payload.end_time:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Schedule start_time must be before end_time.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Время начала графика должно быть раньше времени окончания.")
     existing = db.scalar(select(Schedule).where(Schedule.master_id == payload.master_id, Schedule.work_date == payload.work_date))
     if existing:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Schedule for this master and date already exists.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="График для этого мастера на выбранную дату уже существует.")
     schedule = Schedule(**payload.model_dump())
     db.add(schedule)
     db.flush()
@@ -50,12 +50,12 @@ def create_schedule(payload: ScheduleCreate, db: Session = Depends(get_db)) -> S
 def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: Session = Depends(get_db)) -> Schedule:
     schedule = db.get(Schedule, schedule_id)
     if not schedule:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="График не найден.")
     update_data = payload.model_dump(exclude_unset=True)
     new_start = update_data.get("start_time", schedule.start_time)
     new_end = update_data.get("end_time", schedule.end_time)
     if new_start >= new_end:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Schedule start_time must be before end_time.")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Время начала графика должно быть раньше времени окончания.")
     for field, value in update_data.items():
         setattr(schedule, field, value)
     log_action(db, user_role=ActorRole.ADMIN, action="schedule_updated", entity_type="schedule", entity_id=schedule.id)

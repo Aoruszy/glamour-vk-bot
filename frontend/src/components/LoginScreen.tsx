@@ -23,11 +23,11 @@ export function LoginScreen({
       <div className="ambient ambient-right" />
 
       <section className="login-card">
-        <p className="eyebrow">Glamour CRM</p>
-        <h1>Вход в панель салона.</h1>
+        <p className="eyebrow">Админ-панель Glamour</p>
+        <h1>Вход в рабочее место салона.</h1>
         <p>
-          Используйте данные администратора из настроек backend, чтобы открыть записи,
-          каталог услуг, мастеров и клиентскую базу.
+          Используйте логин и пароль администратора, чтобы открыть записи, каталог услуг, команду,
+          клиентов и контур уведомлений VK.
         </p>
 
         <form
