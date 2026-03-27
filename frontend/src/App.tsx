@@ -9,7 +9,6 @@ import type {
   AvailabilityGroup,
   Client,
   Master,
-  Notification,
   Schedule,
   Service,
   ServiceCategory,
@@ -24,7 +23,6 @@ type Snapshot = {
   masters: Master[];
   schedules: Schedule[];
   appointments: Appointment[];
-  notifications: Notification[];
 };
 
 type SectionId = "overview" | "appointments" | "catalog" | "clients" | "notifications";
@@ -34,7 +32,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; note: string }> = [
   { id: "appointments", label: "Записи", note: "Создание, перенос и статусы" },
   { id: "catalog", label: "Каталог", note: "Категории, услуги и мастера" },
   { id: "clients", label: "Клиенты", note: "База и рабочий график" },
-  { id: "notifications", label: "Уведомления", note: "VK и очередь отправки" }
+  { id: "notifications", label: "Уведомления", note: "Автоматическая отправка в VK" }
 ];
 
 function monthBounds() {
@@ -53,8 +51,7 @@ function emptySnapshot(): Snapshot {
     services: [],
     masters: [],
     schedules: [],
-    appointments: [],
-    notifications: []
+    appointments: []
   };
 }
 
@@ -70,23 +67,6 @@ function appointmentStatusLabel(status: string) {
       no_show: "Неявка"
     }[status] ?? status
   );
-}
-
-function notificationTypeLabel(type: string) {
-  return (
-    {
-      booking_confirmation: "Подтверждение записи",
-      reminder_24h: "Напоминание за 24 часа",
-      reminder_2h: "Напоминание за 2 часа",
-      cancellation: "Отмена",
-      reschedule: "Перенос",
-      status_update: "Обновление статуса"
-    }[type] ?? type
-  );
-}
-
-function notificationStatusLabel(status: string) {
-  return ({ pending: "Ожидает", sent: "Отправлено", skipped: "Пропущено", failed: "Ошибка" }[status] ?? status);
 }
 
 function formatDateTime(dateValue: string, timeValue: string) {
@@ -198,17 +178,16 @@ export default function App() {
     initial ? setLoading(true) : setRefreshing(true);
     setError("");
     try {
-      const [stats, clients, categories, services, masters, schedules, appointments, notifications] = await Promise.all([
+      const [stats, clients, categories, services, masters, schedules, appointments] = await Promise.all([
         api.getStats(dateRange.start, dateRange.end),
         api.listClients(),
         api.listCategories(),
         api.listServices(),
         api.listMasters(),
         api.listSchedules(),
-        api.listAppointments(),
-        api.listNotifications()
+        api.listAppointments()
       ]);
-      setSnapshot({ stats, clients, categories, services, masters, schedules, appointments, notifications });
+      setSnapshot({ stats, clients, categories, services, masters, schedules, appointments });
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.status === 401) {
         handleLogout();
@@ -273,24 +252,14 @@ export default function App() {
     }
   }
 
-  async function processNotificationQueue() {
-    try {
-      const result = await api.processNotifications();
-      setStatusMessage(`Очередь обработана: отправлено ${result.sent}, пропущено ${result.skipped}, ошибок ${result.failed}.`);
-      await refreshAll();
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : "Не удалось обработать очередь.");
-    }
-  }
-
   const selectedAppointment = snapshot.appointments.find((item) => item.id === Number(manageForm.appointment_id));
   const activeManageableAppointments = snapshot.appointments.filter(
     (item) => !["canceled_by_client", "canceled_by_admin"].includes(item.status)
   );
+  const overviewAppointments = activeManageableAppointments.slice(0, 8);
   const recentAppointments = snapshot.appointments.slice(0, 8);
   const recentClients = snapshot.clients.slice(0, 8);
   const recentSchedules = snapshot.schedules.slice(0, 8);
-  const recentNotifications = snapshot.notifications.slice(0, 10);
 
   const clientLabel = (appointment: Appointment) =>
     appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
@@ -358,7 +327,7 @@ export default function App() {
           <h1>Рабочее место администратора салона.</h1>
           <p>
             Вы вошли как <strong>{adminName}</strong>. Управляйте записями, каталогом, клиентами и
-            уведомлениями для пользователей VK без длинной прокрутки.
+            автоматическими уведомлениями для пользователей VK без длинной прокрутки.
           </p>
         </div>
         <div className="hero-actions">
@@ -407,8 +376,39 @@ export default function App() {
           <div className="dashboard-grid">
             <SectionPanel title="Ближайшие события" subtitle="Короткий обзор текущего состояния без длинной прокрутки.">
               <div className="mini-grid">
-                <div className="mini-panel"><h3>Ближайшие записи</h3><ul className="list">{recentAppointments.map((appointment) => <li key={appointment.id}><strong>№{appointment.id} · {serviceName(appointment.service_id)}</strong><span>{clientLabel(appointment)} · {masterName(appointment.master_id)}</span><span>{formatDateTime(appointment.appointment_date, appointment.start_time)} · {appointmentStatusLabel(appointment.status)}</span></li>)}</ul></div>
-                <div className="mini-panel"><h3>Последние уведомления</h3><ul className="list">{recentNotifications.slice(0, 6).map((notification) => <li key={notification.id}><strong>{notificationTypeLabel(notification.type)}</strong><span>{notificationStatusLabel(notification.status)} · №{notification.appointment_id}</span></li>)}</ul></div>
+                <div className="mini-panel">
+                  <h3>Ближайшие записи</h3>
+                  {overviewAppointments.length === 0 ? (
+                    <p>Активных записей на ближайший период пока нет.</p>
+                  ) : (
+                    <ul className="list">
+                      {overviewAppointments.map((appointment) => (
+                        <li key={appointment.id}>
+                          <strong>№{appointment.id} · {serviceName(appointment.service_id)}</strong>
+                          <span>{clientLabel(appointment)} · {masterName(appointment.master_id)}</span>
+                          <span>{formatDateTime(appointment.appointment_date, appointment.start_time)} · {appointmentStatusLabel(appointment.status)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div className="mini-panel">
+                  <h3>Автоуведомления</h3>
+                  <ul className="list">
+                    <li>
+                      <strong>После записи</strong>
+                      <span>Клиент сразу получает подтверждение во VK с услугой, мастером и временем.</span>
+                    </li>
+                    <li>
+                      <strong>При изменениях</strong>
+                      <span>Перенос, отмена и смена статуса отправляются автоматически без действий администратора.</span>
+                    </li>
+                    <li>
+                      <strong>Напоминания</strong>
+                      <span>За 24 часа и за 2 часа до визита бот сам отправляет напоминание клиенту.</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             </SectionPanel>
           </div>
@@ -754,12 +754,20 @@ export default function App() {
 
       {activeSection === "notifications" ? (
         <div className="dashboard-grid">
-          <SectionPanel title="Уведомления" subtitle="Клиент получает сообщения при создании записи, переносе, отмене и смене статуса." aside={<button className="button ghost" onClick={() => void processNotificationQueue()}>Обработать очередь</button>}>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>Время</th><th>Тип</th><th>Статус</th><th>Запись</th><th>Сообщение</th></tr></thead>
-                <tbody>{recentNotifications.map((notification) => <tr key={notification.id}><td>{new Date(notification.send_at).toLocaleString()}</td><td>{notificationTypeLabel(notification.type)}</td><td><span className={`status-chip status-${notification.status}`}>{notificationStatusLabel(notification.status)}</span></td><td>№{notification.appointment_id}</td><td>{notification.message || "Текст сообщения будет сформирован при отправке."}</td></tr>)}</tbody>
-              </table>
+          <SectionPanel title="Автоматические уведомления" subtitle="Система сама отправляет сообщения клиенту во VK и не требует ручной обработки очереди из админки.">
+            <div className="automation-grid">
+              <article className="automation-card">
+                <h3>Мгновенные сообщения</h3>
+                <p>После создания записи клиент сразу получает подтверждение. Эти же сообщения уходят и при переносе, отмене и изменении статуса визита.</p>
+              </article>
+              <article className="automation-card">
+                <h3>Напоминания до визита</h3>
+                <p>Бэкграунд-обработчик сам проверяет будущие записи и отправляет напоминания за 24 часа и за 2 часа до начала услуги.</p>
+              </article>
+              <article className="automation-card">
+                <h3>Что видит администратор</h3>
+                <p>Администратор управляет только самими записями. Отдельный центр уведомлений и список последних отправок больше не отвлекают от работы.</p>
+              </article>
             </div>
           </SectionPanel>
         </div>

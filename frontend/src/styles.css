@@ -316,6 +316,7 @@ textarea {
   font-size: 1rem;
 }
 
+.mini-panel > p,
 .client-card span,
 .schedule-card span {
   color: var(--ink-soft);
@@ -413,6 +414,33 @@ textarea {
 .form-grid h3 {
   margin: 0 0 12px;
   font-size: 1.55rem;
+}
+
+.automation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.automation-card {
+  display: grid;
+  gap: 10px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 252, 247, 0.96), rgba(247, 239, 228, 0.92));
+  box-shadow: 0 16px 32px rgba(81, 54, 37, 0.08);
+}
+
+.automation-card h3 {
+  margin: 0;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-size: 1.5rem;
+}
+
+.automation-card p {
+  margin: 0;
+  color: var(--ink-soft);
 }
 
 .form-grid {
@@ -577,7 +605,8 @@ th {
   .catalog-grid,
   .clients-layout,
   .two-column,
-  .mini-grid {
+  .mini-grid,
+  .automation-grid {
     grid-template-columns: 1fr;
   }
 

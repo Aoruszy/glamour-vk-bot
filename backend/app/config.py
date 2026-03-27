@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     admin_password: str = "glamour-admin"
     auth_secret: str = "glamour-auth-secret"
     auth_access_token_ttl_minutes: int = 480
+    notification_poll_interval_seconds: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",
