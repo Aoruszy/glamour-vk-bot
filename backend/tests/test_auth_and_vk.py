@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 
 from app.api.routes.auth import login
@@ -37,7 +38,8 @@ def test_vk_confirmation_returns_confirmation_token(db_session) -> None:
 
     response = receive_vk_event(event, db_session)
 
-    assert response == settings.vk_confirmation_token
+    assert isinstance(response, PlainTextResponse)
+    assert response.body.decode() == settings.vk_confirmation_token
 
 
 def test_vk_message_returns_debug_payload_without_access_token(monkeypatch, db_session) -> None:
@@ -88,7 +90,8 @@ def test_vk_message_sends_via_vk_api_when_token_present(monkeypatch, db_session)
 
     response = receive_vk_event(event, db_session)
 
-    assert response == "ok"
+    assert isinstance(response, PlainTextResponse)
+    assert response.body.decode() == "ok"
     assert sent_payload["access_token"] == "vk-test-token"
     assert sent_payload["user_id"] == 778
     assert "keyboard" in sent_payload
