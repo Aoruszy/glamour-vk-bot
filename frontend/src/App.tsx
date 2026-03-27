@@ -83,6 +83,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [slotPreview, setSlotPreview] = useState<AvailabilityGroup[]>([]);
+  const [slotLoading, setSlotLoading] = useState(false);
   const [dateRange, setDateRange] = useState(monthBounds());
   const [activeSection, setActiveSection] = useState<SectionId>("overview");
   const [loginForm, setLoginForm] = useState({ username: "admin", password: "" });
@@ -115,7 +116,7 @@ export default function App() {
     service_id: "",
     master_id: "",
     appointment_date: new Date().toISOString().slice(0, 10),
-    start_time: "10:00:00",
+    start_time: "",
     comment: ""
   });
   const [manageForm, setManageForm] = useState({
@@ -165,6 +166,53 @@ export default function App() {
       setAppointmentForm((current) => ({ ...current, master_id: "" }));
     }
   }, [appointmentForm.service_id, appointmentForm.master_id, snapshot.masters]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSlots() {
+      if (!appointmentForm.service_id || !appointmentForm.appointment_date) {
+        setSlotPreview([]);
+        setAppointmentForm((current) => ({ ...current, start_time: "" }));
+        return;
+      }
+
+      setSlotLoading(true);
+      try {
+        const slots = await api.getAvailableSlots(
+          Number(appointmentForm.service_id),
+          appointmentForm.appointment_date,
+          appointmentForm.master_id ? Number(appointmentForm.master_id) : undefined
+        );
+        if (cancelled) {
+          return;
+        }
+        setSlotPreview(slots);
+        setAppointmentForm((current) => {
+          const hasCurrentSlot = slots.some((slot) => slot.start_time === current.start_time);
+          return {
+            ...current,
+            start_time: hasCurrentSlot ? current.start_time : (slots[0]?.start_time ?? "")
+          };
+        });
+      } catch {
+        if (!cancelled) {
+          setSlotPreview([]);
+          setAppointmentForm((current) => ({ ...current, start_time: "" }));
+        }
+      } finally {
+        if (!cancelled) {
+          setSlotLoading(false);
+        }
+      }
+    }
+
+    void loadSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentForm.service_id, appointmentForm.appointment_date, appointmentForm.master_id]);
 
   async function bootstrapSession() {
     try {
@@ -277,6 +325,7 @@ export default function App() {
   const appointmentMasters = appointmentForm.service_id
     ? snapshot.masters.filter((master) => master.service_ids.includes(Number(appointmentForm.service_id)))
     : snapshot.masters;
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   const clientLabel = (appointment: Appointment) =>
     appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
@@ -449,6 +498,10 @@ export default function App() {
                   setError("Выберите клиента из зарегистрированной базы.");
                   return;
                 }
+                if (!appointmentForm.start_time) {
+                  setError("Для выбранной даты нет свободного времени. Выберите другой день или мастера.");
+                  return;
+                }
                 void runAction(() => api.createAppointment({
                   vk_user_id: Number(appointmentForm.vk_user_id),
                   service_id: Number(appointmentForm.service_id),
@@ -476,8 +529,8 @@ export default function App() {
                 </label>
                 <label><span>Услуга</span><select value={appointmentForm.service_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, service_id: event.target.value }))}><option value="">Выберите услугу</option>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
                 <label><span>Мастер</span><select value={appointmentForm.master_id} onChange={(event) => setAppointmentForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Любой свободный мастер</option>{appointmentMasters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
-                <label><span>Дата</span><input type="date" value={appointmentForm.appointment_date} onChange={(event) => setAppointmentForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
-                <label><span>Время</span><input type="time" value={appointmentForm.start_time.slice(0, 5)} onChange={(event) => setAppointmentForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
+                <label><span>Дата</span><input type="date" min={todayIso} value={appointmentForm.appointment_date} onChange={(event) => setAppointmentForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
+                <label><span>Время</span><select value={appointmentForm.start_time} onChange={(event) => setAppointmentForm((current) => ({ ...current, start_time: event.target.value }))} disabled={!appointmentForm.service_id || slotLoading || slotPreview.length === 0}><option value="">{slotLoading ? "Подбираем слоты..." : slotPreview.length === 0 ? "Нет свободных окон" : "Выберите время"}</option>{slotPreview.map((slot) => <option key={`${slot.work_date}-${slot.start_time}`} value={slot.start_time}>{slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)} · {masterListLabel(slot.master_ids)}</option>)}</select></label>
                 <label className="full-width"><span>Комментарий</span><input value={appointmentForm.comment} onChange={(event) => setAppointmentForm((current) => ({ ...current, comment: event.target.value }))} /></label>
                 <button className="button primary full-width" type="submit">Создать запись</button>
               </form>
