@@ -10,6 +10,8 @@ from app.core.enums import ActorRole
 from app.core.enums import NotificationStatus
 from app.models.notification import Notification
 from app.schemas.appointment import AppointmentCreate, AppointmentStatusUpdate
+from app.api.routes.masters import delete_master
+from app.api.routes.services import delete_service, delete_service_category
 from app.services import appointments as appointments_service
 from app.services.appointments import create_appointment, get_available_slots
 from app.services.appointments import update_appointment_status
@@ -233,3 +235,58 @@ def test_update_appointment_status_marks_visit_completed(db_session, seeded_book
     )
 
     assert updated.status.value == "completed"
+
+
+def test_delete_service_rejects_service_used_in_appointments(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    work_date = seeded_booking_data["work_date"]
+
+    create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=work_date,
+            start_time=time(10, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        delete_service(service.id, db_session)
+
+    assert caught.value.status_code == 409
+
+
+def test_delete_master_rejects_master_used_in_appointments(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    master = seeded_booking_data["master"]
+    work_date = seeded_booking_data["work_date"]
+
+    create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            master_id=master.id,
+            appointment_date=work_date,
+            start_time=time(10, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        delete_master(master.id, db_session)
+
+    assert caught.value.status_code == 409
+
+
+def test_delete_category_rejects_non_empty_category(db_session, seeded_booking_data) -> None:
+    category = seeded_booking_data["service"].category
+
+    with pytest.raises(HTTPException) as caught:
+        delete_service_category(category.id, db_session)
+
+    assert caught.value.status_code == 409

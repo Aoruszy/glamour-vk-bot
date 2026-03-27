@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db, require_admin
 from app.core.enums import ActorRole
+from app.models.appointment import Appointment
 from app.models.service import Service, ServiceCategory
 from app.schemas.service import (
     ServiceCategoryCreate,
@@ -48,6 +49,22 @@ def update_service_category(category_id: int, payload: ServiceCategoryUpdate, db
     db.commit()
     db.refresh(category)
     return category
+
+
+@router.delete("/service-categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_service_category(category_id: int, db: Session = Depends(get_db)) -> None:
+    category = db.get(ServiceCategory, category_id)
+    if not category:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Категория не найдена.")
+    has_services = db.scalar(select(Service.id).where(Service.category_id == category_id).limit(1))
+    if has_services is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сначала удалите или перенесите услуги из этой категории.",
+        )
+    db.delete(category)
+    log_action(db, user_role=ActorRole.ADMIN, action="service_category_deleted", entity_type="service_category", entity_id=category_id)
+    db.commit()
 
 
 @router.get("/services", response_model=list[ServiceRead])
@@ -98,3 +115,19 @@ def update_service(service_id: int, payload: ServiceUpdate, db: Session = Depend
     db.commit()
     db.refresh(service)
     return service
+
+
+@router.delete("/services/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_service(service_id: int, db: Session = Depends(get_db)) -> None:
+    service = db.get(Service, service_id)
+    if not service:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Услуга не найдена.")
+    has_appointments = db.scalar(select(Appointment.id).where(Appointment.service_id == service_id).limit(1))
+    if has_appointments is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Нельзя удалить услугу, которая уже используется в записях.",
+        )
+    db.delete(service)
+    log_action(db, user_role=ActorRole.ADMIN, action="service_deleted", entity_type="service", entity_id=service_id)
+    db.commit()

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.deps import get_db, require_admin
 from app.core.enums import ActorRole
+from app.models.appointment import Appointment
 from app.models.master import Master
 from app.models.service import Service
 from app.schemas.master import MasterCreate, MasterRead, MasterUpdate
@@ -67,3 +68,19 @@ def update_master(master_id: int, payload: MasterUpdate, db: Session = Depends(g
     db.commit()
     db.refresh(master)
     return _serialize_master(master)
+
+
+@router.delete("/{master_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_master(master_id: int, db: Session = Depends(get_db)) -> None:
+    master = db.scalar(select(Master).options(selectinload(Master.services)).where(Master.id == master_id))
+    if not master:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Мастер не найден.")
+    has_appointments = db.scalar(select(Appointment.id).where(Appointment.master_id == master_id).limit(1))
+    if has_appointments is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Нельзя удалить мастера, который уже участвует в записях.",
+        )
+    db.delete(master)
+    log_action(db, user_role=ActorRole.ADMIN, action="master_deleted", entity_type="master", entity_id=master_id)
+    db.commit()

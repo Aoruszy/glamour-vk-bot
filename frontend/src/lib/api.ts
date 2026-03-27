@@ -128,6 +128,11 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
+  deleteCategory(categoryId: number) {
+    return request<void>(`/service-categories/${categoryId}`, {
+      method: "DELETE"
+    });
+  },
   listServices() {
     return request<Service[]>("/services");
   },
@@ -158,6 +163,11 @@ export const api = {
     return request<Service>(`/services/${serviceId}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
+    });
+  },
+  deleteService(serviceId: number) {
+    return request<void>(`/services/${serviceId}`, {
+      method: "DELETE"
     });
   },
   listMasters() {
@@ -192,6 +202,11 @@ export const api = {
     return request<Master>(`/masters/${masterId}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
+    });
+  },
+  deleteMaster(masterId: number) {
+    return request<void>(`/masters/${masterId}`, {
+      method: "DELETE"
     });
   },
   listSchedules() {

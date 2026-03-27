@@ -281,6 +281,14 @@ export default function App() {
     }
   }
 
+  async function runDeleteAction(action: () => Promise<unknown>, confirmText: string, message: string, onSuccess?: () => void) {
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+    await runAction(action, message);
+    onSuccess?.();
+  }
+
   async function handleLogin() {
     setLoggingIn(true);
     setError("");
@@ -661,6 +669,7 @@ export default function App() {
                   <label><span>Название</span><input value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} /></label>
                   <label className="full-width"><span>Описание</span><input value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} /></label>
                   {editingCategoryId !== null ? <button className="button ghost full-width" type="button" onClick={resetCategoryForm}>Отменить редактирование</button> : null}
+                  {editingCategoryId !== null ? <button className="button subtle full-width" type="button" onClick={() => void runDeleteAction(() => api.deleteCategory(editingCategoryId), `Удалить категорию «${categoryForm.name || "без названия"}»?`, "Категория удалена.", resetCategoryForm)}>Удалить категорию</button> : null}
                   <button className="button primary full-width" type="submit">{editingCategoryId !== null ? "Сохранить категорию" : "Добавить категорию"}</button>
                 </form>
                 <form className="form-grid compact catalog-form" onSubmit={(event) => {
@@ -724,6 +733,7 @@ export default function App() {
                   <label><span>Длительность</span><input type="number" value={serviceForm.duration_minutes} onChange={(event) => setServiceForm((current) => ({ ...current, duration_minutes: event.target.value }))} /></label>
                   <label><span>Цена</span><input value={serviceForm.price} onChange={(event) => setServiceForm((current) => ({ ...current, price: event.target.value }))} /></label>
                   {editingServiceId !== null ? <button className="button ghost full-width" type="button" onClick={resetServiceForm}>Отменить редактирование</button> : null}
+                  {editingServiceId !== null ? <button className="button subtle full-width" type="button" onClick={() => void runDeleteAction(() => api.deleteService(editingServiceId), `Удалить услугу «${serviceForm.name || "без названия"}»?`, "Услуга удалена.", resetServiceForm)}>Удалить услугу</button> : null}
                   <button className="button primary full-width" type="submit">{editingServiceId !== null ? "Сохранить услугу" : "Добавить услугу"}</button>
                 </form>
                 <form className="form-grid compact catalog-form" onSubmit={(event) => {
@@ -790,6 +800,7 @@ export default function App() {
                   <label><span>Категория мастера</span><select value={masterForm.category_id} onChange={(event) => setMasterForm((current) => ({ ...current, category_id: event.target.value, service_ids: current.service_ids.filter((serviceId) => snapshot.services.some((service) => service.id === serviceId && service.category_id === Number(event.target.value))) }))}><option value="">Выберите категорию</option>{snapshot.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
                   <label className="full-width"><span>Услуги мастера</span><select multiple value={masterForm.service_ids.map(String)} onChange={(event) => setMasterForm((current) => ({ ...current, service_ids: Array.from(event.target.selectedOptions).map((option) => Number(option.value)) }))} disabled={!masterForm.category_id}>{masterCategoryServices.length === 0 ? <option value="">Сначала выберите категорию</option> : null}{masterCategoryServices.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
                   {editingMasterId !== null ? <button className="button ghost full-width" type="button" onClick={resetMasterForm}>Отменить редактирование</button> : null}
+                  {editingMasterId !== null ? <button className="button subtle full-width" type="button" onClick={() => void runDeleteAction(() => api.deleteMaster(editingMasterId), `Удалить мастера «${masterForm.full_name || "без имени"}»?`, "Мастер удален.", resetMasterForm)}>Удалить мастера</button> : null}
                   <button className="button primary full-width" type="submit">{editingMasterId !== null ? "Сохранить мастера" : "Добавить мастера"}</button>
                 </form>
               </div>
