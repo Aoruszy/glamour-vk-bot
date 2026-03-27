@@ -106,6 +106,9 @@ export default function App() {
   const [dateRange, setDateRange] = useState(monthBounds());
   const [activeSection, setActiveSection] = useState<SectionId>("overview");
   const [loginForm, setLoginForm] = useState({ username: "admin", password: "" });
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
+  const [editingMasterId, setEditingMasterId] = useState<number | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
   const [serviceForm, setServiceForm] = useState({
     category_id: "",
@@ -296,6 +299,30 @@ export default function App() {
   const masterName = (masterId: number) => snapshot.masters.find((item) => item.id === masterId)?.full_name || `Мастер №${masterId}`;
   const categoryName = (categoryId: number) =>
     snapshot.categories.find((item) => item.id === categoryId)?.name || `Категория №${categoryId}`;
+  const resetCategoryForm = () => {
+    setCategoryForm({ name: "", description: "" });
+    setEditingCategoryId(null);
+  };
+  const resetServiceForm = () => {
+    setServiceForm({
+      category_id: "",
+      name: "",
+      description: "",
+      duration_minutes: "60",
+      price: "1500.00"
+    });
+    setEditingServiceId(null);
+  };
+  const resetMasterForm = () => {
+    setMasterForm({
+      full_name: "",
+      specialization: "",
+      phone: "",
+      experience_years: "3",
+      service_ids: []
+    });
+    setEditingMasterId(null);
+  };
 
   if (!isAuthenticated) {
     return (
@@ -492,26 +519,86 @@ export default function App() {
           <SectionPanel title="Каталог" subtitle="Категории, услуги и мастера, которые видит клиент во VK.">
             <div className="catalog-grid">
               <div className="catalog-forms">
-                <form className="form-grid compact catalog-form" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createCategory({ name: categoryForm.name, description: categoryForm.description || undefined }), "Категория создана."); }}>
-                  <h3>Новая категория</h3>
+                <form className="form-grid compact catalog-form" onSubmit={(event) => {
+                  event.preventDefault();
+                  void runAction(
+                    () =>
+                      editingCategoryId !== null
+                        ? api.updateCategory(editingCategoryId, {
+                            name: categoryForm.name,
+                            description: categoryForm.description || undefined
+                          })
+                        : api.createCategory({
+                            name: categoryForm.name,
+                            description: categoryForm.description || undefined
+                          }),
+                    editingCategoryId !== null ? "Категория обновлена." : "Категория создана."
+                  ).then(() => resetCategoryForm());
+                }}>
+                  <h3>{editingCategoryId !== null ? "Редактирование категории" : "Новая категория"}</h3>
                   <label><span>Название</span><input value={categoryForm.name} onChange={(event) => setCategoryForm((current) => ({ ...current, name: event.target.value }))} /></label>
                   <label className="full-width"><span>Описание</span><input value={categoryForm.description} onChange={(event) => setCategoryForm((current) => ({ ...current, description: event.target.value }))} /></label>
-                  <button className="button primary full-width" type="submit">Добавить категорию</button>
+                  {editingCategoryId !== null ? <button className="button ghost full-width" type="button" onClick={resetCategoryForm}>Отменить редактирование</button> : null}
+                  <button className="button primary full-width" type="submit">{editingCategoryId !== null ? "Сохранить категорию" : "Добавить категорию"}</button>
                 </form>
-                <form className="form-grid compact catalog-form" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createService({ category_id: Number(serviceForm.category_id), name: serviceForm.name, description: serviceForm.description || undefined, duration_minutes: Number(serviceForm.duration_minutes), price: serviceForm.price }), "Услуга создана."); }}>
-                  <h3>Новая услуга</h3>
+                <form className="form-grid compact catalog-form" onSubmit={(event) => {
+                  event.preventDefault();
+                  void runAction(
+                    () =>
+                      editingServiceId !== null
+                        ? api.updateService(editingServiceId, {
+                            category_id: Number(serviceForm.category_id),
+                            name: serviceForm.name,
+                            description: serviceForm.description || undefined,
+                            duration_minutes: Number(serviceForm.duration_minutes),
+                            price: serviceForm.price
+                          })
+                        : api.createService({
+                            category_id: Number(serviceForm.category_id),
+                            name: serviceForm.name,
+                            description: serviceForm.description || undefined,
+                            duration_minutes: Number(serviceForm.duration_minutes),
+                            price: serviceForm.price
+                          }),
+                    editingServiceId !== null ? "Услуга обновлена." : "Услуга создана."
+                  ).then(() => resetServiceForm());
+                }}>
+                  <h3>{editingServiceId !== null ? "Редактирование услуги" : "Новая услуга"}</h3>
                   <label><span>Категория</span><select value={serviceForm.category_id} onChange={(event) => setServiceForm((current) => ({ ...current, category_id: event.target.value }))}><option value="">Выберите категорию</option>{snapshot.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
                   <label><span>Название</span><input value={serviceForm.name} onChange={(event) => setServiceForm((current) => ({ ...current, name: event.target.value }))} /></label>
                   <label><span>Длительность</span><input type="number" value={serviceForm.duration_minutes} onChange={(event) => setServiceForm((current) => ({ ...current, duration_minutes: event.target.value }))} /></label>
                   <label><span>Цена</span><input value={serviceForm.price} onChange={(event) => setServiceForm((current) => ({ ...current, price: event.target.value }))} /></label>
-                  <button className="button primary full-width" type="submit">Добавить услугу</button>
+                  {editingServiceId !== null ? <button className="button ghost full-width" type="button" onClick={resetServiceForm}>Отменить редактирование</button> : null}
+                  <button className="button primary full-width" type="submit">{editingServiceId !== null ? "Сохранить услугу" : "Добавить услугу"}</button>
                 </form>
-                <form className="form-grid compact catalog-form" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createMaster({ full_name: masterForm.full_name, specialization: masterForm.specialization || undefined, phone: masterForm.phone || undefined, experience_years: Number(masterForm.experience_years), service_ids: masterForm.service_ids }), "Мастер добавлен."); }}>
-                  <h3>Новый мастер</h3>
+                <form className="form-grid compact catalog-form" onSubmit={(event) => {
+                  event.preventDefault();
+                  void runAction(
+                    () =>
+                      editingMasterId !== null
+                        ? api.updateMaster(editingMasterId, {
+                            full_name: masterForm.full_name,
+                            specialization: masterForm.specialization || undefined,
+                            phone: masterForm.phone || undefined,
+                            experience_years: Number(masterForm.experience_years),
+                            service_ids: masterForm.service_ids
+                          })
+                        : api.createMaster({
+                            full_name: masterForm.full_name,
+                            specialization: masterForm.specialization || undefined,
+                            phone: masterForm.phone || undefined,
+                            experience_years: Number(masterForm.experience_years),
+                            service_ids: masterForm.service_ids
+                          }),
+                    editingMasterId !== null ? "Мастер обновлен." : "Мастер добавлен."
+                  ).then(() => resetMasterForm());
+                }}>
+                  <h3>{editingMasterId !== null ? "Редактирование мастера" : "Новый мастер"}</h3>
                   <label><span>ФИО</span><input value={masterForm.full_name} onChange={(event) => setMasterForm((current) => ({ ...current, full_name: event.target.value }))} /></label>
                   <label><span>Специализация</span><input value={masterForm.specialization} onChange={(event) => setMasterForm((current) => ({ ...current, specialization: event.target.value }))} /></label>
                   <label className="full-width"><span>Услуги мастера</span><select multiple value={masterForm.service_ids.map(String)} onChange={(event) => setMasterForm((current) => ({ ...current, service_ids: Array.from(event.target.selectedOptions).map((option) => Number(option.value)) }))}>{snapshot.services.map((service) => <option key={service.id} value={service.id}>{service.name}</option>)}</select></label>
-                  <button className="button primary full-width" type="submit">Добавить мастера</button>
+                  {editingMasterId !== null ? <button className="button ghost full-width" type="button" onClick={resetMasterForm}>Отменить редактирование</button> : null}
+                  <button className="button primary full-width" type="submit">{editingMasterId !== null ? "Сохранить мастера" : "Добавить мастера"}</button>
                 </form>
               </div>
 
@@ -525,19 +612,35 @@ export default function App() {
                           <strong>{category.name}</strong>
                           <span>{category.description || "Без описания"}</span>
                         </div>
-                        <button
-                          className="button subtle"
-                          onClick={() =>
-                            void runAction(
-                              () => api.updateCategory(category.id, { is_active: !category.is_active }),
-                              category.is_active
-                                ? `Категория «${category.name}» скрыта.`
-                                : `Категория «${category.name}» снова активна.`
-                            )
-                          }
-                        >
-                          {category.is_active ? "Скрыть" : "Показать"}
-                        </button>
+                        <div className="entity-actions">
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() => {
+                              setEditingCategoryId(category.id);
+                              setCategoryForm({
+                                name: category.name,
+                                description: category.description || ""
+                              });
+                            }}
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() =>
+                              void runAction(
+                                () => api.updateCategory(category.id, { is_active: !category.is_active }),
+                                category.is_active
+                                  ? `Категория «${category.name}» скрыта.`
+                                  : `Категория «${category.name}» снова активна.`
+                              )
+                            }
+                          >
+                            {category.is_active ? "Скрыть" : "Показать"}
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -552,19 +655,38 @@ export default function App() {
                           <strong>{service.name}</strong>
                           <span>{categoryName(service.category_id)} · {service.duration_minutes} мин · {service.price} ₽</span>
                         </div>
-                        <button
-                          className="button subtle"
-                          onClick={() =>
-                            void runAction(
-                              () => api.updateService(service.id, { is_active: !service.is_active }),
-                              service.is_active
-                                ? `Услуга «${service.name}» скрыта.`
-                                : `Услуга «${service.name}» снова активна.`
-                            )
-                          }
-                        >
-                          {service.is_active ? "Скрыть" : "Показать"}
-                        </button>
+                        <div className="entity-actions">
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() => {
+                              setEditingServiceId(service.id);
+                              setServiceForm({
+                                category_id: String(service.category_id),
+                                name: service.name,
+                                description: service.description || "",
+                                duration_minutes: String(service.duration_minutes),
+                                price: String(service.price)
+                              });
+                            }}
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() =>
+                              void runAction(
+                                () => api.updateService(service.id, { is_active: !service.is_active }),
+                                service.is_active
+                                  ? `Услуга «${service.name}» скрыта.`
+                                  : `Услуга «${service.name}» снова активна.`
+                              )
+                            }
+                          >
+                            {service.is_active ? "Скрыть" : "Показать"}
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>
@@ -579,19 +701,38 @@ export default function App() {
                           <strong>{master.full_name}</strong>
                           <span>{master.specialization || "Специализация не указана"}</span>
                         </div>
-                        <button
-                          className="button subtle"
-                          onClick={() =>
-                            void runAction(
-                              () => api.updateMaster(master.id, { is_active: !master.is_active }),
-                              master.is_active
-                                ? `Мастер «${master.full_name}» скрыт.`
-                                : `Мастер «${master.full_name}» снова активен.`
-                            )
-                          }
-                        >
-                          {master.is_active ? "Скрыть" : "Показать"}
-                        </button>
+                        <div className="entity-actions">
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() => {
+                              setEditingMasterId(master.id);
+                              setMasterForm({
+                                full_name: master.full_name,
+                                specialization: master.specialization || "",
+                                phone: master.phone || "",
+                                experience_years: String(master.experience_years ?? 3),
+                                service_ids: master.service_ids
+                              });
+                            }}
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() =>
+                              void runAction(
+                                () => api.updateMaster(master.id, { is_active: !master.is_active }),
+                                master.is_active
+                                  ? `Мастер «${master.full_name}» скрыт.`
+                                  : `Мастер «${master.full_name}» снова активен.`
+                              )
+                            }
+                          >
+                            {master.is_active ? "Скрыть" : "Показать"}
+                          </button>
+                        </div>
                       </li>
                     ))}
                   </ul>

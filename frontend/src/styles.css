@@ -296,6 +296,13 @@ textarea {
   gap: 4px;
 }
 
+.entity-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .muted-action {
   color: var(--ink-soft);
   font-size: 0.92rem;
