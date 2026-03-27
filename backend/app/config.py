@@ -16,8 +16,8 @@ class Settings(BaseSettings):
     vk_api_version: str = "5.199"
     vk_group_id: int = 0
     salon_name: str = "Glamour"
-    salon_address: str = "Kaliningrad, salon address not configured yet"
-    salon_phone: str = "+7 (000) 000-00-00"
+    salon_address: str = "Калининград, Гайдара 173"
+    salon_phone: str = "+7 (911) 462-62-85"
     salon_working_hours: str = "10:00-20:00"
     salon_map_url: str = ""
     salon_website_url: str = ""

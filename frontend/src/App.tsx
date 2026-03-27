@@ -79,7 +79,6 @@ function monthKey(dateValue: Date) {
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
   const [loading, setLoading] = useState(api.hasSession());
-  const [refreshing, setRefreshing] = useState(false);
   const [loggingIn, setLoggingIn] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(api.hasSession());
   const [adminName, setAdminName] = useState("admin");
@@ -87,7 +86,8 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState("");
   const [slotPreview, setSlotPreview] = useState<AvailabilityGroup[]>([]);
   const [slotLoading, setSlotLoading] = useState(false);
-  const [dateRange, setDateRange] = useState(monthBounds());
+  const [rescheduleSlots, setRescheduleSlots] = useState<AvailabilityGroup[]>([]);
+  const [rescheduleSlotLoading, setRescheduleSlotLoading] = useState(false);
   const [activeSection, setActiveSection] = useState<SectionId>("overview");
   const [loginForm, setLoginForm] = useState({ username: "admin", password: "" });
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
@@ -214,6 +214,53 @@ export default function App() {
     };
   }, [appointmentForm.service_id, appointmentForm.appointment_date, appointmentForm.master_id]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRescheduleSlots() {
+      const appointment = snapshot.appointments.find((item) => item.id === Number(manageForm.appointment_id));
+      if (!appointment) {
+        setRescheduleSlots([]);
+        return;
+      }
+
+      setRescheduleSlotLoading(true);
+      try {
+        const slots = await api.getAvailableSlots(
+          appointment.service_id,
+          manageForm.appointment_date,
+          manageForm.master_id ? Number(manageForm.master_id) : appointment.master_id
+        );
+        if (cancelled) {
+          return;
+        }
+        setRescheduleSlots(slots);
+        setManageForm((current) => {
+          const hasCurrentSlot = slots.some((slot) => slot.start_time === current.start_time);
+          return {
+            ...current,
+            start_time: hasCurrentSlot ? current.start_time : (slots[0]?.start_time ?? "")
+          };
+        });
+      } catch {
+        if (!cancelled) {
+          setRescheduleSlots([]);
+          setManageForm((current) => ({ ...current, start_time: "" }));
+        }
+      } finally {
+        if (!cancelled) {
+          setRescheduleSlotLoading(false);
+        }
+      }
+    }
+
+    void loadRescheduleSlots();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.appointments, manageForm.appointment_id, manageForm.appointment_date, manageForm.master_id]);
+
   async function bootstrapSession() {
     try {
       const admin = await api.getCurrentAdmin();
@@ -231,17 +278,18 @@ export default function App() {
     setAdminName("admin");
     setSnapshot(emptySnapshot());
     setLoading(false);
-    setRefreshing(false);
     setError("");
     setStatusMessage("");
   }
 
   async function refreshAll(initial = false) {
-    initial ? setLoading(true) : setRefreshing(true);
+    if (initial) {
+      setLoading(true);
+    }
     setError("");
     try {
       const [stats, clients, categories, services, masters, appointments] = await Promise.all([
-        api.getStats(dateRange.start, dateRange.end),
+        api.getStats(monthBounds().start, monthBounds().end),
         api.listClients(),
         api.listCategories(),
         api.listServices(),
@@ -258,7 +306,6 @@ export default function App() {
       }
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }
 
@@ -338,14 +385,20 @@ export default function App() {
   const overviewAppointments = activeManageableAppointments.slice(0, 8);
   const recentAppointments = snapshot.appointments.slice(0, 8);
   const recentClients = snapshot.clients;
+  const calendarAppointments = snapshot.appointments.filter(
+    (item) => !["canceled_by_client", "canceled_by_admin"].includes(item.status)
+  );
   const appointmentMasters = appointmentForm.service_id
     ? snapshot.masters.filter((master) => master.service_ids.includes(Number(appointmentForm.service_id)))
     : snapshot.masters;
   const masterCategoryServices = masterForm.category_id
     ? snapshot.services.filter((service) => service.category_id === Number(masterForm.category_id))
     : [];
+  const rescheduleMasters = selectedAppointment
+    ? snapshot.masters.filter((master) => master.service_ids.includes(selectedAppointment.service_id))
+    : snapshot.masters;
   const todayIso = new Date().toISOString().slice(0, 10);
-  const sortedAppointments = [...snapshot.appointments].sort((left, right) => {
+  const sortedAppointments = [...calendarAppointments].sort((left, right) => {
     const leftValue = `${left.appointment_date}T${left.start_time}`;
     const rightValue = `${right.appointment_date}T${right.start_time}`;
     return leftValue.localeCompare(rightValue);
@@ -448,17 +501,6 @@ export default function App() {
           </p>
         </div>
         <div className="hero-actions">
-          <label>
-            <span>С</span>
-            <input type="date" value={dateRange.start} onChange={(event) => setDateRange((current) => ({ ...current, start: event.target.value }))} />
-          </label>
-          <label>
-            <span>По</span>
-            <input type="date" value={dateRange.end} onChange={(event) => setDateRange((current) => ({ ...current, end: event.target.value }))} />
-          </label>
-          <button className="button primary" onClick={() => void refreshAll()}>
-            {refreshing ? "Обновляем..." : "Обновить"}
-          </button>
           <button className="button ghost" onClick={handleLogout}>
             Выйти
           </button>
@@ -492,40 +534,21 @@ export default function App() {
           </section>
           <div className="dashboard-grid">
             <SectionPanel title="Ближайшие события" subtitle="Короткий обзор текущего состояния без длинной прокрутки.">
-              <div className="mini-grid">
-                <div className="mini-panel">
-                  <h3>Ближайшие записи</h3>
-                  {overviewAppointments.length === 0 ? (
-                    <p>Активных записей на ближайший период пока нет.</p>
-                  ) : (
-                    <ul className="list">
-                      {overviewAppointments.map((appointment) => (
-                        <li key={appointment.id}>
-                          <strong>№{appointment.id} · {serviceName(appointment.service_id)}</strong>
-                          <span>{clientLabel(appointment)} · {masterName(appointment.master_id)}</span>
-                          <span>{formatDateTime(appointment.appointment_date, appointment.start_time)} · {appointmentStatusLabel(appointment.status)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <div className="mini-panel">
-                  <h3>Автоуведомления</h3>
+              <div className="mini-panel">
+                <h3>Ближайшие записи</h3>
+                {overviewAppointments.length === 0 ? (
+                  <p>Активных записей на ближайший период пока нет.</p>
+                ) : (
                   <ul className="list">
-                    <li>
-                      <strong>После записи</strong>
-                      <span>Клиент сразу получает подтверждение во VK с услугой, мастером и временем.</span>
-                    </li>
-                    <li>
-                      <strong>При изменениях</strong>
-                      <span>Перенос, отмена и смена статуса отправляются автоматически без действий администратора.</span>
-                    </li>
-                    <li>
-                      <strong>Напоминания</strong>
-                      <span>За 24 часа и за 2 часа до визита бот сам отправляет напоминание клиенту.</span>
-                    </li>
+                    {overviewAppointments.map((appointment) => (
+                      <li key={appointment.id}>
+                        <strong>№{appointment.id} · {serviceName(appointment.service_id)}</strong>
+                        <span>{clientLabel(appointment)} · {masterName(appointment.master_id)}</span>
+                        <span>{formatDateTime(appointment.appointment_date, appointment.start_time)} · {appointmentStatusLabel(appointment.status)}</span>
+                      </li>
+                    ))}
                   </ul>
-                </div>
+                )}
               </div>
             </SectionPanel>
           </div>
@@ -596,6 +619,10 @@ export default function App() {
                   setError("Выберите запись для переноса.");
                   return;
                 }
+                if (!manageForm.start_time) {
+                  setError("Для выбранной даты нет доступного времени для переноса.");
+                  return;
+                }
                 void runAction(() => api.rescheduleAppointment(Number(manageForm.appointment_id), {
                   appointment_date: manageForm.appointment_date,
                   start_time: manageForm.start_time,
@@ -617,9 +644,9 @@ export default function App() {
                     comment: appointment?.comment || ""
                   }));
                 }}><option value="">Выберите запись</option>{activeManageableAppointments.map((appointment) => <option key={appointment.id} value={appointment.id}>№{appointment.id} · {clientLabel(appointment)} · {formatDateTime(appointment.appointment_date, appointment.start_time)}</option>)}</select></label>
-                <label><span>Новая дата</span><input type="date" value={manageForm.appointment_date} onChange={(event) => setManageForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
-                <label><span>Новое время</span><input type="time" value={manageForm.start_time.slice(0, 5)} onChange={(event) => setManageForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
-                <label><span>Мастер</span><select value={manageForm.master_id} onChange={(event) => setManageForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Сохранить текущего</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
+                <label><span>Новая дата</span><input type="date" min={todayIso} value={manageForm.appointment_date} onChange={(event) => setManageForm((current) => ({ ...current, appointment_date: event.target.value }))} /></label>
+                <label><span>Новое время</span><select value={manageForm.start_time} onChange={(event) => setManageForm((current) => ({ ...current, start_time: event.target.value }))} disabled={!selectedAppointment || rescheduleSlotLoading || rescheduleSlots.length === 0}><option value="">{rescheduleSlotLoading ? "Подбираем слоты..." : rescheduleSlots.length === 0 ? "Нет доступных окон" : "Выберите время"}</option>{rescheduleSlots.map((slot) => <option key={`${slot.work_date}-${slot.start_time}`} value={slot.start_time}>{slot.start_time.slice(0, 5)} - {slot.end_time.slice(0, 5)} · {masterListLabel(slot.master_ids)}</option>)}</select></label>
+                <label><span>Мастер</span><select value={manageForm.master_id} onChange={(event) => setManageForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Сохранить текущего</option>{rescheduleMasters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
                 <label><span>Комментарий</span><input value={manageForm.comment} onChange={(event) => setManageForm((current) => ({ ...current, comment: event.target.value }))} /></label>
                 <button className="button primary" type="submit">Сохранить перенос</button>
               </form>
