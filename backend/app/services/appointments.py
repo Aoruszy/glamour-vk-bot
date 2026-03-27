@@ -142,15 +142,30 @@ def get_available_slots(
     if not masters:
         return []
 
-    grouped: dict[tuple[time, time], set[int]] = defaultdict(set)
-    for master in masters:
-        schedule = db.scalar(
+    master_ids = [master.id for master in masters]
+    schedules = {
+        schedule.master_id: schedule
+        for schedule in db.scalars(
             select(Schedule).where(
-                Schedule.master_id == master.id,
+                Schedule.master_id.in_(master_ids),
                 Schedule.work_date == work_date,
                 Schedule.is_working_day.is_(True),
             )
         )
+    }
+    appointments_by_master: dict[int, list[Appointment]] = defaultdict(list)
+    for appointment in db.scalars(
+        select(Appointment).where(
+            Appointment.master_id.in_(master_ids),
+            Appointment.appointment_date == work_date,
+            Appointment.status.in_(tuple(BLOCKING_STATUSES)),
+        )
+    ):
+        appointments_by_master[appointment.master_id].append(appointment)
+
+    grouped: dict[tuple[time, time], set[int]] = defaultdict(set)
+    for master in masters:
+        schedule = schedules.get(master.id)
         if not schedule:
             continue
 
@@ -158,11 +173,17 @@ def get_available_slots(
         last_start_dt = datetime.combine(work_date, schedule.end_time) - timedelta(minutes=service.duration_minutes)
         while current_dt <= last_start_dt:
             candidate_start = current_dt.time()
-            try:
-                candidate_end = _ensure_master_slot_available(db, master, service, work_date, candidate_start)
-                grouped[(candidate_start, candidate_end)].add(master.id)
-            except HTTPException:
-                pass
+            candidate_end_dt = current_dt + timedelta(minutes=service.duration_minutes)
+            overlaps = False
+            for existing in appointments_by_master.get(master.id, []):
+                existing_start = datetime.combine(existing.appointment_date, existing.start_time)
+                existing_end = datetime.combine(existing.appointment_date, existing.end_time)
+                if current_dt < existing_end and candidate_end_dt > existing_start:
+                    overlaps = True
+                    break
+
+            if not overlaps:
+                grouped[(candidate_start, candidate_end_dt.time())].add(master.id)
             current_dt += timedelta(minutes=step_minutes)
 
     return [
