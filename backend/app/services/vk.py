@@ -34,21 +34,61 @@ ANY_MASTER_LABEL = "Любой свободный мастер"
 CANCEL_PREFIX = "Отменить #"
 
 
+def _button_color(label: str) -> str:
+    if label == "Записаться":
+        return "primary"
+    if label in {"В меню", "Главное меню"}:
+        return "primary"
+    if label.startswith("Отменить"):
+        return "negative"
+    return "secondary"
+
+
+def _button_payload(label: str) -> dict[str, object]:
+    return {
+        "action": {
+            "type": "text",
+            "label": label,
+        },
+        "color": _button_color(label),
+    }
+
+
+def _chunk_buttons(buttons: list[str], size: int) -> list[list[str]]:
+    return [buttons[index : index + size] for index in range(0, len(buttons), size)]
+
+
+def _is_navigation_button(label: str) -> bool:
+    return label in {"Назад", "В меню", "Главное меню"}
+
+
+def _keyboard_rows(buttons: list[str]) -> list[list[dict[str, object]]]:
+    if buttons == MAIN_BUTTONS:
+        return [
+            [_button_payload("Записаться"), _button_payload("Мои записи")],
+            [_button_payload("Отменить запись"), _button_payload("Услуги")],
+            [_button_payload("Мастера"), _button_payload("Контакты")],
+            [_button_payload("Помощь")],
+        ]
+
+    navigation = [button for button in buttons if _is_navigation_button(button)]
+    content = [button for button in buttons if not _is_navigation_button(button)]
+
+    rows: list[list[dict[str, object]]] = []
+    for group in _chunk_buttons(content, 2):
+        rows.append([_button_payload(button) for button in group])
+
+    if navigation:
+        rows.append([_button_payload(button) for button in navigation])
+
+    return rows or [[_button_payload("В меню")]]
+
+
 def build_keyboard(buttons: list[str]) -> str:
     keyboard = {
         "one_time": False,
-        "buttons": [
-            [
-                {
-                    "action": {
-                        "type": "text",
-                        "label": button,
-                    },
-                    "color": "secondary",
-                }
-            ]
-            for button in buttons
-        ],
+        "inline": False,
+        "buttons": _keyboard_rows(buttons),
     }
     return json.dumps(keyboard, ensure_ascii=False)
 
