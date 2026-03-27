@@ -31,7 +31,27 @@ MAIN_BUTTONS = [
 GLOBAL_COMMANDS = {"в меню", "главное меню", "отмена", "меню"}
 BACK_COMMANDS = {"назад"}
 ANY_MASTER_LABEL = "Любой свободный мастер"
-CANCEL_PREFIX = "Отменить #"
+CANCEL_PREFIX = "Отменить №"
+
+
+def _appointment_status_label(status: AppointmentStatus) -> str:
+    labels = {
+        AppointmentStatus.NEW: "Новая",
+        AppointmentStatus.CONFIRMED: "Подтверждена",
+        AppointmentStatus.COMPLETED: "Завершена",
+        AppointmentStatus.CANCELED_BY_CLIENT: "Отменена вами",
+        AppointmentStatus.CANCELED_BY_ADMIN: "Отменена салоном",
+        AppointmentStatus.RESCHEDULED: "Перенесена",
+        AppointmentStatus.NO_SHOW: "Неявка",
+    }
+    return labels.get(status, status.value)
+
+
+def _appointment_short_label(appointment: Appointment) -> str:
+    return (
+        f"№{appointment.id} {appointment.appointment_date} "
+        f"{appointment.start_time.strftime('%H:%M')}"
+    )
 
 
 def _button_color(label: str) -> str:
@@ -212,8 +232,17 @@ def _format_appointments(db: Session, client_id: int) -> str:
     if not appointments:
         return "У вас пока нет записей."
     return "Ваши записи:\n" + "\n".join(
-        f"- #{appointment.id} {appointment.appointment_date} {appointment.start_time.strftime('%H:%M')} ({appointment.status.value})"
+        f"- {_appointment_short_label(appointment)} ({_appointment_status_label(appointment.status)})"
         for appointment in appointments[:10]
+    )
+
+
+def _format_cancelable_appointments(appointments: list[Appointment]) -> str:
+    if not appointments:
+        return "У вас нет активных записей для отмены."
+    return "Активные записи для отмены:\n" + "\n".join(
+        f"- {_appointment_short_label(appointment)}"
+        for appointment in appointments[:6]
     )
 
 
@@ -410,13 +439,13 @@ def _start_cancel_flow(db: Session, client: Client, session: BotSession) -> VkBo
 
     payload = _session_payload(session)
     payload["cancel_options"] = {
-        f"Отменить #{appointment.id}": appointment.id for appointment in appointments[:6]
+        f"Отменить {_appointment_short_label(appointment)}": appointment.id for appointment in appointments[:6]
     }
     _save_session(session, state="choosing_cancel", payload=payload)
     db.commit()
     return _response(
-        "Выберите запись, которую хотите отменить.",
-        list(payload["cancel_options"].keys()) + ["В меню"],
+        _format_cancelable_appointments(appointments[:6]),
+        list(payload["cancel_options"].keys()) + ["Назад", "В меню"],
     )
 
 
@@ -440,11 +469,11 @@ def _cancel_selected_appointment(db: Session, client: Client, session: BotSessio
     )
     _reset_session(session)
     db.commit()
-    return _response(f"Запись #{appointment.id} отменена.")
+    return _response(f"Запись {_appointment_short_label(appointment)} отменена.")
 
 
 def _cancel_appointment_by_label(db: Session, client: Client, session: BotSession, label: str) -> VkBotResponse:
-    match = re.search(r"#(\d+)", label)
+    match = re.search(r"(?:#|№)(\d+)", label)
     if not match:
         return _start_cancel_flow(db, client, session)
 
@@ -462,7 +491,7 @@ def _cancel_appointment_by_label(db: Session, client: Client, session: BotSessio
     )
     _reset_session(session)
     db.commit()
-    return _response(f"Запись #{appointment.id} отменена.")
+    return _response(f"Запись {_appointment_short_label(appointment)} отменена.")
 
 
 def _go_back(db: Session, client: Client, session: BotSession) -> VkBotResponse:
@@ -471,6 +500,12 @@ def _go_back(db: Session, client: Client, session: BotSession) -> VkBotResponse:
         _save_session(session, state="awaiting_name", payload=payload)
         db.commit()
         return _response("Хорошо, давайте заново. Как вас зовут?", ["В меню"])
+    if session.state == "choosing_cancel":
+        _reset_session(session)
+        db.commit()
+        appointments = _active_appointments(db, client.id)
+        buttons = ["Отменить запись", "В меню"] if appointments else MAIN_BUTTONS
+        return _response(_format_appointments(db, client.id), buttons)
     if session.state == "choosing_service":
         return _show_categories(db, session)
     if session.state == "choosing_master":
@@ -592,8 +627,8 @@ def handle_vk_event(db: Session, event: VkEvent, confirm_token: str) -> str | Vk
         return _response(_format_masters(db))
     if normalized == "мои записи":
         appointments = _active_appointments(db, client.id)
-        buttons = [f"{CANCEL_PREFIX}{appointment.id}" for appointment in appointments[:5]] if appointments else MAIN_BUTTONS
-        return _response(_format_appointments(db, client.id), buttons if appointments else MAIN_BUTTONS)
+        buttons = ["Отменить запись", "В меню"] if appointments else MAIN_BUTTONS
+        return _response(_format_appointments(db, client.id), buttons)
     if normalized == "отменить запись":
         return _start_cancel_flow(db, client, session)
     if normalized.startswith(CANCEL_PREFIX.lower()):
