@@ -1,8 +1,34 @@
 from __future__ import annotations
 
+import logging
+import socket
+from contextlib import contextmanager
 from secrets import randbelow
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+logger = logging.getLogger(__name__)
+
+
+@contextmanager
+def _force_ipv4_dns() -> None:
+    original_getaddrinfo = socket.getaddrinfo
+
+    def ipv4_getaddrinfo(
+        host: str,
+        port: int,
+        family: int = 0,
+        type: int = 0,
+        proto: int = 0,
+        flags: int = 0,
+    ):
+        return original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+    socket.getaddrinfo = ipv4_getaddrinfo
+    try:
+        yield
+    finally:
+        socket.getaddrinfo = original_getaddrinfo
 
 
 class VkApiClient:
@@ -34,13 +60,15 @@ class VkApiClient:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             method="POST",
         )
-        with urlopen(request, timeout=10) as response:
-            raw = response.read().decode("utf-8")
+        with _force_ipv4_dns():
+            with urlopen(request, timeout=5) as response:
+                raw = response.read().decode("utf-8")
 
         import json
 
         parsed = json.loads(raw)
         if "error" in parsed:
             error_message = parsed["error"].get("error_msg", "VK API request failed.")
+            logger.warning("VK API returned error for user_id=%s: %s", user_id, error_message)
             raise RuntimeError(error_message)
         return parsed
