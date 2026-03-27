@@ -9,7 +9,6 @@ import type {
   AvailabilityGroup,
   Client,
   Master,
-  Schedule,
   Service,
   ServiceCategory,
   StatsSummary
@@ -21,18 +20,17 @@ type Snapshot = {
   categories: ServiceCategory[];
   services: Service[];
   masters: Master[];
-  schedules: Schedule[];
   appointments: Appointment[];
 };
 
-type SectionId = "overview" | "appointments" | "catalog" | "clients" | "notifications";
+type SectionId = "overview" | "appointments" | "catalog" | "clients" | "calendar";
 
 const SECTIONS: Array<{ id: SectionId; label: string; note: string }> = [
   { id: "overview", label: "Обзор", note: "Ключевые цифры и недавние события" },
   { id: "appointments", label: "Записи", note: "Создание, перенос и статусы" },
   { id: "catalog", label: "Каталог", note: "Категории, услуги и мастера" },
-  { id: "clients", label: "Клиенты", note: "База и рабочий график" },
-  { id: "notifications", label: "Уведомления", note: "Автоматическая отправка в VK" }
+  { id: "clients", label: "Клиенты", note: "База клиентов из VK" },
+  { id: "calendar", label: "Календарь", note: "Записи по дням и времени" }
 ];
 
 function monthBounds() {
@@ -50,7 +48,6 @@ function emptySnapshot(): Snapshot {
     categories: [],
     services: [],
     masters: [],
-    schedules: [],
     appointments: []
   };
 }
@@ -73,6 +70,12 @@ function formatDateTime(dateValue: string, timeValue: string) {
   return `${dateValue} в ${timeValue.slice(0, 5)}`;
 }
 
+function monthKey(dateValue: Date) {
+  const year = dateValue.getFullYear();
+  const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
   const [loading, setLoading] = useState(api.hasSession());
@@ -90,6 +93,8 @@ export default function App() {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
   const [editingMasterId, setEditingMasterId] = useState<number | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => monthKey(new Date()));
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
   const [serviceForm, setServiceForm] = useState({
     category_id: "",
@@ -105,12 +110,6 @@ export default function App() {
     phone: "",
     experience_years: "3",
     service_ids: [] as number[]
-  });
-  const [scheduleForm, setScheduleForm] = useState({
-    master_id: "",
-    work_date: new Date().toISOString().slice(0, 10),
-    start_time: "10:00:00",
-    end_time: "18:00:00"
   });
   const [appointmentForm, setAppointmentForm] = useState({
     vk_user_id: "",
@@ -241,16 +240,15 @@ export default function App() {
     initial ? setLoading(true) : setRefreshing(true);
     setError("");
     try {
-      const [stats, clients, categories, services, masters, schedules, appointments] = await Promise.all([
+      const [stats, clients, categories, services, masters, appointments] = await Promise.all([
         api.getStats(dateRange.start, dateRange.end),
         api.listClients(),
         api.listCategories(),
         api.listServices(),
         api.listMasters(),
-        api.listSchedules(),
         api.listAppointments()
       ]);
-      setSnapshot({ stats, clients, categories, services, masters, schedules, appointments });
+      setSnapshot({ stats, clients, categories, services, masters, appointments });
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.status === 401) {
         handleLogout();
@@ -287,6 +285,16 @@ export default function App() {
     }
     await runAction(action, message);
     onSuccess?.();
+  }
+
+  function shiftCalendarMonth(offset: number) {
+    const nextMonth = new Date(calendarMonthDate);
+    nextMonth.setMonth(nextMonth.getMonth() + offset);
+    const nextMonthKey = monthKey(nextMonth);
+    setCalendarMonth(nextMonthKey);
+    if (!selectedCalendarDate.startsWith(nextMonthKey)) {
+      setSelectedCalendarDate(`${nextMonthKey}-01`);
+    }
   }
 
   async function handleLogin() {
@@ -329,8 +337,7 @@ export default function App() {
   );
   const overviewAppointments = activeManageableAppointments.slice(0, 8);
   const recentAppointments = snapshot.appointments.slice(0, 8);
-  const recentClients = snapshot.clients.slice(0, 8);
-  const recentSchedules = snapshot.schedules.slice(0, 8);
+  const recentClients = snapshot.clients;
   const appointmentMasters = appointmentForm.service_id
     ? snapshot.masters.filter((master) => master.service_ids.includes(Number(appointmentForm.service_id)))
     : snapshot.masters;
@@ -338,6 +345,30 @@ export default function App() {
     ? snapshot.services.filter((service) => service.category_id === Number(masterForm.category_id))
     : [];
   const todayIso = new Date().toISOString().slice(0, 10);
+  const sortedAppointments = [...snapshot.appointments].sort((left, right) => {
+    const leftValue = `${left.appointment_date}T${left.start_time}`;
+    const rightValue = `${right.appointment_date}T${right.start_time}`;
+    return leftValue.localeCompare(rightValue);
+  });
+  const appointmentsByDate = sortedAppointments.reduce<Record<string, Appointment[]>>((accumulator, appointment) => {
+    accumulator[appointment.appointment_date] = [...(accumulator[appointment.appointment_date] ?? []), appointment];
+    return accumulator;
+  }, {});
+  const calendarMonthDate = new Date(`${calendarMonth}-01T00:00:00`);
+  const calendarMonthLabel = calendarMonthDate.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+  const calendarYear = calendarMonthDate.getFullYear();
+  const calendarMonthIndex = calendarMonthDate.getMonth();
+  const calendarDaysInMonth = new Date(calendarYear, calendarMonthIndex + 1, 0).getDate();
+  const calendarOffset = (new Date(calendarYear, calendarMonthIndex, 1).getDay() + 6) % 7;
+  const calendarCells = [
+    ...Array.from({ length: calendarOffset }, (_, index) => ({ key: `empty-${index}`, date: null })),
+    ...Array.from({ length: calendarDaysInMonth }, (_, index) => {
+      const day = index + 1;
+      const iso = `${calendarMonth}-${String(day).padStart(2, "0")}`;
+      return { key: iso, date: iso };
+    })
+  ];
+  const selectedCalendarAppointments = appointmentsByDate[selectedCalendarDate] ?? [];
 
   const clientLabel = (appointment: Appointment) =>
     appointment.client_name ? `${appointment.client_name} · VK ID ${appointment.client_vk_user_id}` : `VK ID ${appointment.client_vk_user_id}`;
@@ -413,7 +444,7 @@ export default function App() {
           <h1>Рабочее место администратора салона.</h1>
           <p>
             Вы вошли как <strong>{adminName}</strong>. Управляйте записями, каталогом, клиентами и
-            автоматическими уведомлениями для пользователей VK без длинной прокрутки.
+            календарем салона без длинной прокрутки.
           </p>
         </div>
         <div className="hero-actions">
@@ -811,73 +842,95 @@ export default function App() {
 
       {activeSection === "clients" ? (
         <div className="dashboard-grid">
-          <SectionPanel title="Клиенты и график" subtitle="Клиенты приходят из VK и админки автоматически, а здесь вы видите их базу и управляете рабочими днями команды.">
-            <div className="clients-layout">
-              <div className="mini-panel">
-                <h3>Клиентская база</h3>
-                <div className="client-cards">
-                  {recentClients.map((client) => (
-                    <article key={client.id} className="client-card">
-                      <strong>{client.full_name || `VK ID ${client.vk_user_id}`}</strong>
-                      <span>VK ID: {client.vk_user_id}</span>
-                      <span>{client.phone || "Телефон не указан"}</span>
-                      <span>
-                        {client.status === "vip"
-                          ? "VIP"
-                          : client.status === "blocked"
-                            ? "Заблокирован"
-                            : client.status === "active"
-                              ? "Активный"
-                              : "Новый"}
-                      </span>
-                    </article>
-                  ))}
-                </div>
-              </div>
-
-              <form className="form-grid compact mini-panel" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createSchedule({ master_id: Number(scheduleForm.master_id), work_date: scheduleForm.work_date, start_time: scheduleForm.start_time, end_time: scheduleForm.end_time }), "График мастера добавлен."); }}>
-                <h3>Рабочий день</h3>
-                <label><span>Мастер</span><select value={scheduleForm.master_id} onChange={(event) => setScheduleForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Выберите мастера</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
-                <label><span>Дата</span><input type="date" value={scheduleForm.work_date} onChange={(event) => setScheduleForm((current) => ({ ...current, work_date: event.target.value }))} /></label>
-                <label><span>Начало</span><input type="time" value={scheduleForm.start_time.slice(0, 5)} onChange={(event) => setScheduleForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))} /></label>
-                <label><span>Конец</span><input type="time" value={scheduleForm.end_time.slice(0, 5)} onChange={(event) => setScheduleForm((current) => ({ ...current, end_time: `${event.target.value}:00` }))} /></label>
-                <button className="button primary" type="submit">Добавить график</button>
-              </form>
-            </div>
-            <div className="mini-panel">
-              <h3>Ближайшие рабочие дни</h3>
-              <div className="schedule-cards">
-                {recentSchedules.map((schedule) => (
-                  <article key={schedule.id} className="schedule-card">
-                    <strong>{masterName(schedule.master_id)}</strong>
-                    <span>{schedule.work_date}</span>
+          <SectionPanel title="Клиенты" subtitle="Все зарегистрированные клиенты, которые уже писали в VK-бот или были добавлены администратором.">
+            <div className="client-cards">
+              {recentClients.length === 0 ? (
+                <p className="empty-state">Клиентская база пока пуста.</p>
+              ) : (
+                recentClients.map((client) => (
+                  <article key={client.id} className="client-card">
+                    <strong>{client.full_name || `VK ID ${client.vk_user_id}`}</strong>
+                    <span>VK ID: {client.vk_user_id}</span>
+                    <span>{client.phone || "Телефон не указан"}</span>
                     <span>
-                      {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}
+                      {client.status === "vip"
+                        ? "VIP"
+                        : client.status === "blocked"
+                          ? "Заблокирован"
+                          : client.status === "active"
+                            ? "Активный"
+                            : "Новый"}
                     </span>
                   </article>
-                ))}
-              </div>
+                ))
+              )}
             </div>
           </SectionPanel>
         </div>
       ) : null}
 
-      {activeSection === "notifications" ? (
+      {activeSection === "calendar" ? (
         <div className="dashboard-grid">
-          <SectionPanel title="Автоматические уведомления" subtitle="Система сама отправляет сообщения клиенту во VK и не требует ручной обработки очереди из админки.">
-            <div className="automation-grid">
-              <article className="automation-card">
-                <h3>Мгновенные сообщения</h3>
-                <p>После создания записи клиент сразу получает подтверждение. Эти же сообщения уходят и при переносе, отмене и изменении статуса визита.</p>
-              </article>
-              <article className="automation-card">
-                <h3>Напоминания до визита</h3>
-                <p>Бэкграунд-обработчик сам проверяет будущие записи и отправляет напоминания за 24 часа и за 2 часа до начала услуги.</p>
-              </article>
-              <article className="automation-card">
-                <h3>Что видит администратор</h3>
-                <p>Администратор управляет только самими записями. Отдельный центр уведомлений и список последних отправок больше не отвлекают от работы.</p>
-              </article>
+          <SectionPanel
+            title="Календарь записей"
+            subtitle="Календарный вид помогает быстро увидеть загруженность по дням и открыть список визитов на выбранную дату."
+            aside={
+              <div className="calendar-toolbar">
+                <button className="button ghost" type="button" onClick={() => shiftCalendarMonth(-1)}>
+                  Назад
+                </button>
+                <strong>{calendarMonthLabel}</strong>
+                <button className="button ghost" type="button" onClick={() => shiftCalendarMonth(1)}>
+                  Вперед
+                </button>
+              </div>
+            }
+          >
+            <div className="calendar-layout">
+              <div className="calendar-board">
+                <div className="calendar-weekdays">
+                  {["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"].map((day) => (
+                    <span key={day}>{day}</span>
+                  ))}
+                </div>
+                <div className="calendar-grid">
+                  {calendarCells.map((cell) => {
+                    if (!cell.date) {
+                      return <div key={cell.key} className="calendar-day calendar-day-empty" />;
+                    }
+                    const items = appointmentsByDate[cell.date] ?? [];
+                    const isToday = cell.date === todayIso;
+                    const isActive = cell.date === selectedCalendarDate;
+                    return (
+                      <button
+                        key={cell.key}
+                        type="button"
+                        className={`calendar-day ${isActive ? "calendar-day-active" : ""} ${items.length > 0 ? "calendar-day-busy" : ""} ${isToday ? "calendar-day-today" : ""}`}
+                        onClick={() => setSelectedCalendarDate(cell.date)}
+                      >
+                        <strong>{Number(cell.date.slice(-2))}</strong>
+                        <span>{items.length > 0 ? `${items.length} запис${items.length === 1 ? "ь" : items.length < 5 ? "и" : "ей"}` : "Свободно"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="mini-panel calendar-agenda">
+                <h3>Записи на {selectedCalendarDate}</h3>
+                {selectedCalendarAppointments.length === 0 ? (
+                  <p>На выбранную дату записей пока нет.</p>
+                ) : (
+                  <ul className="list">
+                    {selectedCalendarAppointments.map((appointment) => (
+                      <li key={appointment.id}>
+                        <strong>№{appointment.id} · {appointment.start_time.slice(0, 5)} · {serviceName(appointment.service_id)}</strong>
+                        <span>{clientLabel(appointment)} · {masterName(appointment.master_id)}</span>
+                        <span>{appointmentStatusLabel(appointment.status)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             </div>
           </SectionPanel>
         </div>
