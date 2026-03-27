@@ -18,6 +18,12 @@ from app.schemas.appointment import AppointmentCreate
 from app.schemas.vk import VkBotResponse, VkEvent
 from app.services.appointments import create_appointment, get_available_slots
 
+SPAM_WINDOW_SECONDS = 8
+SPAM_MAX_MESSAGES = 10
+DUPLICATE_WINDOW_SECONDS = 6
+DUPLICATE_MAX_MESSAGES = 3
+SPAM_MUTE_SECONDS = 20
+
 MAIN_BUTTONS = [
     "Записаться",
     "Мои записи",
@@ -125,12 +131,95 @@ def _session_payload(session: BotSession) -> dict[str, object]:
 
 
 def _save_session(session: BotSession, *, state: str, payload: dict[str, object]) -> None:
+    current_payload = _session_payload(session)
+    spam_meta = current_payload.get("_spam")
+    merged_payload = dict(payload)
+    if spam_meta is not None and "_spam" not in merged_payload:
+        merged_payload["_spam"] = spam_meta
     session.state = state
-    session.payload = json.dumps(payload, ensure_ascii=False)
+    session.payload = json.dumps(merged_payload, ensure_ascii=False)
 
 
 def _reset_session(session: BotSession) -> None:
     _save_session(session, state="idle", payload={})
+
+
+def _spam_now() -> datetime:
+    return datetime.utcnow()
+
+
+def _parse_dt(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _store_spam_meta(session: BotSession, payload: dict[str, object], spam_meta: dict[str, object]) -> None:
+    updated_payload = dict(payload)
+    updated_payload["_spam"] = spam_meta
+    _save_session(session, state=session.state, payload=updated_payload)
+
+
+def _check_spam(session: BotSession, text: str) -> VkBotResponse | None:
+    payload = _session_payload(session)
+    spam_meta = dict(payload.get("_spam", {}))
+    now = _spam_now()
+    normalized = text.strip().lower()
+
+    mute_until = _parse_dt(spam_meta.get("mute_until"))
+    if mute_until is not None and now < mute_until:
+        _store_spam_meta(
+            session,
+            payload,
+            {
+                **spam_meta,
+                "last_message_at": now.isoformat(),
+                "last_text": normalized,
+            },
+        )
+        return VkBotResponse(reply_text="", buttons=[])
+
+    window_started_at = _parse_dt(spam_meta.get("window_started_at"))
+    if window_started_at is None or (now - window_started_at).total_seconds() > SPAM_WINDOW_SECONDS:
+        window_started_at = now
+        message_count = 0
+    else:
+        message_count = int(spam_meta.get("message_count", 0))
+
+    last_message_at = _parse_dt(spam_meta.get("last_message_at"))
+    duplicate_count = int(spam_meta.get("duplicate_count", 0))
+    if (
+        normalized
+        and normalized == spam_meta.get("last_text")
+        and last_message_at is not None
+        and (now - last_message_at).total_seconds() <= DUPLICATE_WINDOW_SECONDS
+    ):
+        duplicate_count += 1
+    else:
+        duplicate_count = 1
+
+    message_count += 1
+    next_meta = {
+        "window_started_at": window_started_at.isoformat(),
+        "message_count": message_count,
+        "last_message_at": now.isoformat(),
+        "last_text": normalized,
+        "duplicate_count": duplicate_count,
+    }
+
+    if message_count > SPAM_MAX_MESSAGES or duplicate_count > DUPLICATE_MAX_MESSAGES:
+        next_meta["mute_until"] = (now + timedelta(seconds=SPAM_MUTE_SECONDS)).isoformat()
+        _store_spam_meta(session, payload, next_meta)
+        return _response(
+            "??????? ????? ????????? ??????. ????????? ???????, ? ? ???????? ???????? ? ???????.",
+            ["? ????"],
+        )
+
+    _store_spam_meta(session, payload, next_meta)
+    return None
 
 
 def _get_or_create_session(db: Session, vk_user_id: int) -> BotSession:
@@ -603,6 +692,11 @@ def handle_vk_event(db: Session, event: VkEvent, confirm_token: str) -> str | Vk
 
     client = _ensure_client(db, from_id)
     session = _get_or_create_session(db, from_id)
+
+    spam_response = _check_spam(session, text)
+    if spam_response is not None:
+        db.commit()
+        return spam_response
 
     if normalized in GLOBAL_COMMANDS:
         _reset_session(session)

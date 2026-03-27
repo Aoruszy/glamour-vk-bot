@@ -57,6 +57,8 @@ def receive_vk_event(
     result = handle_vk_event(db, event, settings.vk_confirmation_token)
     if isinstance(result, str):
         return PlainTextResponse(result)
+    if not result.reply_text.strip():
+        return PlainTextResponse("ok")
 
     from_id = event.object.message.from_id if event.object and event.object.message else None
     if from_id is not None and settings.vk_access_token:

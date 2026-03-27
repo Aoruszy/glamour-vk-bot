@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
@@ -11,6 +13,7 @@ from app.core.security import verify_access_token
 from app.models.appointment import Appointment
 from app.schemas.auth import LoginRequest
 from app.schemas.vk import VkBotResponse, VkEvent
+from app.services import vk as vk_service
 from app.services.vk import handle_vk_event
 
 
@@ -191,3 +194,40 @@ def test_vk_booking_flow_requests_profile_when_missing(db_session) -> None:
 
     assert isinstance(response, VkBotResponse)
     assert "ваше имя" in response.reply_text.lower()
+
+
+def test_vk_antispam_warns_and_then_silences_repeated_messages(monkeypatch, db_session) -> None:
+    from_id = 999001
+    base_time = datetime(2026, 3, 27, 12, 0, 0)
+    timeline = iter(base_time + timedelta(seconds=index) for index in range(6))
+
+    monkeypatch.setattr(vk_service, "_spam_now", lambda: next(timeline))
+
+    responses = [
+        handle_vk_event(
+            db_session,
+            VkEvent.model_validate(
+                {"type": "message_new", "object": {"message": {"from_id": from_id, "text": "??????"}}}
+            ),
+            "confirm-token",
+        )
+        for _ in range(4)
+    ]
+
+    assert all(isinstance(response, VkBotResponse) for response in responses)
+    assert any(
+        "??????? ????? ?????????" in response.reply_text.lower()
+        for response in responses
+        if isinstance(response, VkBotResponse)
+    )
+
+    silent_response = handle_vk_event(
+        db_session,
+        VkEvent.model_validate(
+            {"type": "message_new", "object": {"message": {"from_id": from_id, "text": "??????"}}}
+        ),
+        "confirm-token",
+    )
+
+    assert isinstance(silent_response, VkBotResponse)
+    assert silent_response.reply_text == ""
