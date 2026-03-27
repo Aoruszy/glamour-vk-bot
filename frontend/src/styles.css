@@ -287,6 +287,40 @@ textarea {
   margin-bottom: 6px;
 }
 
+.clients-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 16px;
+}
+
+.client-cards,
+.schedule-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.client-card,
+.schedule-card {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 252, 247, 0.92);
+}
+
+.client-card strong,
+.schedule-card strong {
+  font-size: 1rem;
+}
+
+.client-card span,
+.schedule-card span {
+  color: var(--ink-soft);
+}
+
 .entity-list {
   padding-left: 0;
   margin: 0;
@@ -541,6 +575,7 @@ th {
   .stats-grid,
   .section-tabs,
   .catalog-grid,
+  .clients-layout,
   .two-column,
   .mini-grid {
     grid-template-columns: 1fr;

@@ -124,7 +124,6 @@ export default function App() {
     experience_years: "3",
     service_ids: [] as number[]
   });
-  const [clientForm, setClientForm] = useState({ vk_user_id: "", full_name: "", phone: "" });
   const [scheduleForm, setScheduleForm] = useState({
     master_id: "",
     work_date: new Date().toISOString().slice(0, 10),
@@ -702,16 +701,31 @@ export default function App() {
 
       {activeSection === "clients" ? (
         <div className="dashboard-grid">
-          <SectionPanel title="Клиенты и график" subtitle="Ведение базы клиентов и расписания команды.">
-            <div className="two-column">
-              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createClient({ vk_user_id: Number(clientForm.vk_user_id), full_name: clientForm.full_name || undefined, phone: clientForm.phone || undefined }), "Клиент добавлен."); }}>
-                <h3>Клиент</h3>
-                <label><span>VK ID</span><input type="number" value={clientForm.vk_user_id} onChange={(event) => setClientForm((current) => ({ ...current, vk_user_id: event.target.value }))} /></label>
-                <label><span>Имя</span><input value={clientForm.full_name} onChange={(event) => setClientForm((current) => ({ ...current, full_name: event.target.value }))} /></label>
-                <label><span>Телефон</span><input value={clientForm.phone} onChange={(event) => setClientForm((current) => ({ ...current, phone: event.target.value }))} /></label>
-                <button className="button primary" type="submit">Добавить клиента</button>
-              </form>
-              <form className="form-grid compact" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createSchedule({ master_id: Number(scheduleForm.master_id), work_date: scheduleForm.work_date, start_time: scheduleForm.start_time, end_time: scheduleForm.end_time }), "График мастера добавлен."); }}>
+          <SectionPanel title="Клиенты и график" subtitle="Клиенты приходят из VK и админки автоматически, а здесь вы видите их базу и управляете рабочими днями команды.">
+            <div className="clients-layout">
+              <div className="mini-panel">
+                <h3>Клиентская база</h3>
+                <div className="client-cards">
+                  {recentClients.map((client) => (
+                    <article key={client.id} className="client-card">
+                      <strong>{client.full_name || `VK ID ${client.vk_user_id}`}</strong>
+                      <span>VK ID: {client.vk_user_id}</span>
+                      <span>{client.phone || "Телефон не указан"}</span>
+                      <span>
+                        {client.status === "vip"
+                          ? "VIP"
+                          : client.status === "blocked"
+                            ? "Заблокирован"
+                            : client.status === "active"
+                              ? "Активный"
+                              : "Новый"}
+                      </span>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <form className="form-grid compact mini-panel" onSubmit={(event) => { event.preventDefault(); void runAction(() => api.createSchedule({ master_id: Number(scheduleForm.master_id), work_date: scheduleForm.work_date, start_time: scheduleForm.start_time, end_time: scheduleForm.end_time }), "График мастера добавлен."); }}>
                 <h3>Рабочий день</h3>
                 <label><span>Мастер</span><select value={scheduleForm.master_id} onChange={(event) => setScheduleForm((current) => ({ ...current, master_id: event.target.value }))}><option value="">Выберите мастера</option>{snapshot.masters.map((master) => <option key={master.id} value={master.id}>{master.full_name}</option>)}</select></label>
                 <label><span>Дата</span><input type="date" value={scheduleForm.work_date} onChange={(event) => setScheduleForm((current) => ({ ...current, work_date: event.target.value }))} /></label>
@@ -720,9 +734,19 @@ export default function App() {
                 <button className="button primary" type="submit">Добавить график</button>
               </form>
             </div>
-            <div className="mini-grid">
-              <div className="mini-panel"><h3>Последние клиенты</h3><ul className="list">{recentClients.map((client) => <li key={client.id}><strong>{client.full_name || `VK ID ${client.vk_user_id}`}</strong><span>{client.phone || "Телефон не указан"}</span></li>)}</ul></div>
-              <div className="mini-panel"><h3>Ближайшие рабочие дни</h3><ul className="list">{recentSchedules.map((schedule) => <li key={schedule.id}><strong>{masterName(schedule.master_id)}</strong><span>{schedule.work_date} · {schedule.start_time.slice(0, 5)}-{schedule.end_time.slice(0, 5)}</span></li>)}</ul></div>
+            <div className="mini-panel">
+              <h3>Ближайшие рабочие дни</h3>
+              <div className="schedule-cards">
+                {recentSchedules.map((schedule) => (
+                  <article key={schedule.id} className="schedule-card">
+                    <strong>{masterName(schedule.master_id)}</strong>
+                    <span>{schedule.work_date}</span>
+                    <span>
+                      {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}
+                    </span>
+                  </article>
+                ))}
+              </div>
             </div>
           </SectionPanel>
         </div>
