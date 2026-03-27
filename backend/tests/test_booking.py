@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pytest
 from fastapi import HTTPException
@@ -10,6 +10,7 @@ from app.core.enums import ActorRole
 from app.core.enums import NotificationStatus
 from app.models.notification import Notification
 from app.schemas.appointment import AppointmentCreate, AppointmentStatusUpdate
+from app.services import appointments as appointments_service
 from app.services.appointments import create_appointment, get_available_slots
 from app.services.appointments import update_appointment_status
 from app.services.notifications import process_due_notifications
@@ -124,6 +125,54 @@ def test_double_booking_is_rejected(db_session, seeded_booking_data) -> None:
         )
 
     assert caught.value.status_code == 409
+
+
+def test_available_slots_exclude_past_time_for_today(db_session, seeded_booking_data, monkeypatch) -> None:
+    service = seeded_booking_data["service"]
+    master = seeded_booking_data["master"]
+    schedule = seeded_booking_data["schedule"]
+
+    monkeypatch.setattr(
+        appointments_service,
+        "_current_local_datetime",
+        lambda: datetime.combine(schedule.work_date, time(12, 0)),
+    )
+
+    slots = get_available_slots(
+        db_session,
+        service_id=service.id,
+        work_date=schedule.work_date,
+        master_id=master.id,
+    )
+
+    assert all(slot.start_time > time(12, 0) for slot in slots)
+
+
+def test_create_appointment_rejects_past_time(db_session, seeded_booking_data, monkeypatch) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    work_date = seeded_booking_data["work_date"]
+
+    monkeypatch.setattr(
+        appointments_service,
+        "_current_local_datetime",
+        lambda: datetime.combine(work_date, time(12, 0)),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        create_appointment(
+            db_session,
+            AppointmentCreate(
+                client_id=client.id,
+                service_id=service.id,
+                appointment_date=work_date,
+                start_time=time(10, 0),
+                created_by=ActorRole.ADMIN,
+            ),
+        )
+
+    assert caught.value.status_code == 400
+    assert "прошедшее время" in str(caught.value.detail).lower()
 
 
 def test_process_due_notifications_marks_due_items_as_sent(db_session, seeded_booking_data) -> None:

@@ -37,6 +37,16 @@ CANCELED_STATUSES = {
 }
 
 
+def _current_local_datetime() -> datetime:
+    return datetime.now()
+
+
+def _ensure_slot_is_not_in_past(work_date: date, start_time: time) -> None:
+    start_dt = datetime.combine(work_date, start_time)
+    if start_dt <= _current_local_datetime():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Нельзя выбрать уже прошедшее время.")
+
+
 def _require_client(db: Session, client_id: int) -> Client:
     client = db.get(Client, client_id)
     if not client:
@@ -91,6 +101,7 @@ def _ensure_master_slot_available(
     end_dt = start_dt + timedelta(minutes=service.duration_minutes)
     schedule_start = datetime.combine(work_date, schedule.start_time)
     schedule_end = datetime.combine(work_date, schedule.end_time)
+    _ensure_slot_is_not_in_past(work_date, start_time)
 
     if start_dt < schedule_start or end_dt > schedule_end:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Выбранное время вне рабочего графика мастера.")
@@ -168,6 +179,7 @@ def get_available_slots(
         appointments_by_master[appointment.master_id].append(appointment)
 
     grouped: dict[tuple[time, time], set[int]] = defaultdict(set)
+    now = _current_local_datetime()
     for master in masters:
         schedule = schedules.get(master.id)
         if not schedule:
@@ -178,6 +190,9 @@ def get_available_slots(
         while current_dt <= last_start_dt:
             candidate_start = current_dt.time()
             candidate_end_dt = current_dt + timedelta(minutes=service.duration_minutes)
+            if current_dt <= now:
+                current_dt += timedelta(minutes=step_minutes)
+                continue
             overlaps = False
             for existing in appointments_by_master.get(master.id, []):
                 existing_start = datetime.combine(existing.appointment_date, existing.start_time)
@@ -207,6 +222,7 @@ def create_appointment(db: Session, payload: AppointmentCreate) -> Appointment:
         if payload.client_id is not None
         else _require_client_by_vk(db, payload.vk_user_id)  # type: ignore[arg-type]
     )
+    _ensure_slot_is_not_in_past(payload.appointment_date, payload.start_time)
     service = _require_service(db, payload.service_id)
     master = _resolve_master(db, service, payload.appointment_date, payload.start_time, payload.master_id)
     end_time = _ensure_master_slot_available(db, master, service, payload.appointment_date, payload.start_time)
@@ -280,6 +296,7 @@ def reschedule_appointment(db: Session, *, appointment: Appointment, payload: Ap
     if appointment.status in CANCELED_STATUSES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Отмененную запись нельзя перенести.")
 
+    _ensure_slot_is_not_in_past(payload.appointment_date, payload.start_time)
     service = _require_service(db, appointment.service_id)
     master = _resolve_master(
         db,
