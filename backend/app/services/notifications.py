@@ -4,7 +4,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.enums import NotificationStatus, NotificationType
+from app.core.enums import AppointmentStatus, NotificationStatus, NotificationType
 from app.models.appointment import Appointment
 from app.models.client import Client
 from app.models.master import Master
@@ -97,6 +97,15 @@ def append_status_notification(
     )
 
 
+def clear_pending_notifications(db: Session, *, appointment_id: int) -> None:
+    db.execute(
+        delete(Notification).where(
+            Notification.appointment_id == appointment_id,
+            Notification.status == NotificationStatus.PENDING,
+        )
+    )
+
+
 def _render_notification_message(db: Session, notification: Notification) -> str:
     appointment = db.get(Appointment, notification.appointment_id)
     if not appointment:
@@ -152,6 +161,14 @@ def process_due_notifications(db: Session, *, vk_client: VkApiClient | None = No
         appointment = db.get(Appointment, notification.appointment_id)
         client = db.get(Client, appointment.client_id) if appointment else None
         if notification.channel != "vk" or not appointment or not client or not client.vk_user_id:
+            notification.status = NotificationStatus.SKIPPED
+            skipped += 1
+            continue
+
+        if appointment.status in {
+            AppointmentStatus.CANCELED_BY_CLIENT,
+            AppointmentStatus.CANCELED_BY_ADMIN,
+        }:
             notification.status = NotificationStatus.SKIPPED
             skipped += 1
             continue

@@ -20,6 +20,7 @@ from app.schemas.appointment import (
 from app.services.audit import log_action
 from app.services.notifications import (
     append_status_notification,
+    clear_pending_notifications,
     deliver_due_notifications,
     refresh_appointment_notifications,
 )
@@ -275,6 +276,8 @@ def cancel_appointment(
     )
     if reason:
         appointment.comment = f"{appointment.comment or ''}\nПричина отмены: {reason}".strip()
+
+    clear_pending_notifications(db, appointment_id=appointment.id)
 
     if actor_role != ActorRole.CLIENT:
         append_status_notification(
