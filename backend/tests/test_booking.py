@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.core.enums import ActorRole
 from app.core.enums import NotificationStatus, NotificationType
+from app.models.schedule import Schedule
 from app.models.notification import Notification
 from app.schemas.appointment import AppointmentCreate, AppointmentStatusUpdate
 from app.api.routes.masters import delete_master
@@ -15,7 +18,7 @@ from app.api.routes.services import delete_service, delete_service_category
 from app.services import appointments as appointments_service
 from app.services.appointments import cancel_appointment, create_appointment, get_available_slots
 from app.services.appointments import update_appointment_status
-from app.services.notifications import process_due_notifications
+from app.services.notifications import process_due_notifications, sync_pending_reminder_schedule
 
 
 def test_create_appointment_creates_booking_and_notifications(db_session, seeded_booking_data) -> None:
@@ -217,6 +220,96 @@ def test_process_due_notifications_marks_due_items_as_sent(db_session, seeded_bo
     assert result["sent"] >= 1
     assert delivered[0][0] == client.vk_user_id
     assert notification.status == NotificationStatus.SENT
+
+
+def test_reminder_schedule_uses_app_timezone(monkeypatch, db_session, seeded_booking_data) -> None:
+    monkeypatch.setenv("APP_TIMEZONE", "Europe/Kaliningrad")
+    get_settings.cache_clear()
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    work_date = seeded_booking_data["work_date"] + timedelta(days=1)
+    db_session.add(
+        Schedule(
+            master=seeded_booking_data["master"],
+            work_date=work_date,
+            start_time=time(10, 0),
+            end_time=time(18, 0),
+        )
+    )
+    db_session.commit()
+
+    appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=work_date,
+            start_time=time(14, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    reminder = db_session.scalar(
+        select(Notification).where(
+            Notification.appointment_id == appointment.id,
+            Notification.type == NotificationType.REMINDER_24H,
+        )
+    )
+
+    assert reminder is not None
+    send_at = reminder.send_at if reminder.send_at.tzinfo else reminder.send_at.replace(tzinfo=UTC)
+    local_send_at = send_at.astimezone(ZoneInfo("Europe/Kaliningrad"))
+    assert local_send_at.date() == work_date - timedelta(days=1)
+    assert local_send_at.strftime("%H:%M") == "14:00"
+    get_settings.cache_clear()
+
+
+def test_sync_pending_reminders_recalculates_existing_schedule(monkeypatch, db_session, seeded_booking_data) -> None:
+    monkeypatch.setenv("APP_TIMEZONE", "Europe/Kaliningrad")
+    get_settings.cache_clear()
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    work_date = seeded_booking_data["work_date"] + timedelta(days=1)
+    db_session.add(
+        Schedule(
+            master=seeded_booking_data["master"],
+            work_date=work_date,
+            start_time=time(10, 0),
+            end_time=time(18, 0),
+        )
+    )
+    db_session.commit()
+
+    appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=work_date,
+            start_time=time(14, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    reminder = db_session.scalar(
+        select(Notification).where(
+            Notification.appointment_id == appointment.id,
+            Notification.type == NotificationType.REMINDER_24H,
+        )
+    )
+    assert reminder is not None
+
+    reminder.send_at = datetime(2026, 3, 28, 14, 0)
+    db_session.commit()
+
+    sync_pending_reminder_schedule(db_session)
+    db_session.refresh(reminder)
+
+    send_at = reminder.send_at if reminder.send_at.tzinfo else reminder.send_at.replace(tzinfo=UTC)
+    local_send_at = send_at.astimezone(ZoneInfo("Europe/Kaliningrad"))
+    assert local_send_at.date() == work_date - timedelta(days=1)
+    assert local_send_at.strftime("%H:%M") == "14:00"
+    get_settings.cache_clear()
 
 
 def test_update_appointment_status_marks_visit_completed(db_session, seeded_booking_data) -> None:

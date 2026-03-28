@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_host: str = "127.0.0.1"
     app_port: int = 8000
+    app_timezone: str = "Europe/Kaliningrad"
     api_prefix: str = "/api/v1"
     database_url: str = "sqlite:///./glamour.db"
     vk_callback_secret: str = "glamour-secret"

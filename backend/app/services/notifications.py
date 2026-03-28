@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
@@ -11,6 +12,38 @@ from app.models.master import Master
 from app.models.notification import Notification
 from app.models.service import Service
 from app.services.vk_api import VkApiClient
+
+
+def _local_timezone() -> ZoneInfo:
+    return ZoneInfo(get_settings().app_timezone)
+
+
+def _now_utc() -> datetime:
+    return datetime.now(UTC)
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _appointment_start_utc(appointment: Appointment) -> datetime:
+    local_dt = datetime.combine(
+        appointment.appointment_date,
+        appointment.start_time,
+        tzinfo=_local_timezone(),
+    )
+    return local_dt.astimezone(UTC)
+
+
+def _expected_send_at(notification_type: NotificationType, appointment: Appointment) -> datetime | None:
+    start_utc = _appointment_start_utc(appointment)
+    if notification_type == NotificationType.REMINDER_24H:
+        return start_utc - timedelta(hours=24)
+    if notification_type == NotificationType.REMINDER_2H:
+        return start_utc - timedelta(hours=2)
+    return None
 
 
 def _appointment_datetime_label(appointment: Appointment) -> str:
@@ -38,8 +71,8 @@ def refresh_appointment_notifications(
 ) -> None:
     db.execute(delete(Notification).where(Notification.appointment_id == appointment.id))
 
-    start_dt = datetime.combine(appointment.appointment_date, appointment.start_time)
-    now = datetime.utcnow()
+    start_dt = _appointment_start_utc(appointment)
+    now = _now_utc()
     notifications: list[Notification] = []
     if include_confirmation:
         notifications.append(
@@ -52,7 +85,7 @@ def refresh_appointment_notifications(
             )
         )
 
-    reminder_24h_at = start_dt - timedelta(hours=24)
+    reminder_24h_at = _expected_send_at(NotificationType.REMINDER_24H, appointment)
     if reminder_24h_at > now:
         notifications.append(
             Notification(
@@ -64,7 +97,7 @@ def refresh_appointment_notifications(
             )
         )
 
-    reminder_2h_at = start_dt - timedelta(hours=2)
+    reminder_2h_at = _expected_send_at(NotificationType.REMINDER_2H, appointment)
     if reminder_2h_at > now:
         notifications.append(
             Notification(
@@ -90,7 +123,7 @@ def append_status_notification(
         Notification(
             appointment_id=appointment_id,
             type=notification_type,
-            send_at=datetime.utcnow(),
+            send_at=_now_utc(),
             status=NotificationStatus.PENDING,
             message=message,
         )
@@ -104,6 +137,27 @@ def clear_pending_notifications(db: Session, *, appointment_id: int) -> None:
             Notification.status == NotificationStatus.PENDING,
         )
     )
+
+
+def sync_pending_reminder_schedule(db: Session) -> None:
+    notifications = list(
+        db.scalars(
+            select(Notification).where(
+                Notification.status == NotificationStatus.PENDING,
+                Notification.type.in_([NotificationType.REMINDER_24H, NotificationType.REMINDER_2H]),
+            )
+        )
+    )
+    for notification in notifications:
+        appointment = db.get(Appointment, notification.appointment_id)
+        if not appointment:
+            continue
+        expected = _expected_send_at(notification.type, appointment)
+        if expected is None:
+            continue
+        if _as_utc(notification.send_at) != expected:
+            notification.send_at = expected
+    db.flush()
 
 
 def _render_notification_message(db: Session, notification: Notification) -> str:
@@ -135,7 +189,8 @@ def _render_notification_message(db: Session, notification: Notification) -> str
 
 def process_due_notifications(db: Session, *, vk_client: VkApiClient | None = None) -> dict[str, int]:
     settings = get_settings()
-    now = datetime.now(UTC)
+    sync_pending_reminder_schedule(db)
+    now = _now_utc()
     notifications = list(
         db.scalars(
             select(Notification)
