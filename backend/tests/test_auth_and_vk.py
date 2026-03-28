@@ -9,10 +9,13 @@ from sqlalchemy import select
 from app.api.routes.auth import login
 from app.api.routes.vk import receive_vk_event
 from app.config import get_settings
+from app.core.enums import ActorRole
 from app.core.security import verify_access_token
 from app.models.appointment import Appointment
+from app.schemas.appointment import AppointmentCreate
 from app.schemas.auth import LoginRequest
 from app.schemas.vk import VkBotResponse, VkEvent
+from app.services.appointments import cancel_appointment, create_appointment
 from app.services import vk as vk_service
 from app.services.vk import handle_vk_event
 
@@ -194,6 +197,54 @@ def test_vk_booking_flow_requests_profile_when_missing(db_session) -> None:
 
     assert isinstance(response, VkBotResponse)
     assert "ваше имя" in response.reply_text.lower()
+
+
+def test_vk_my_appointments_hides_canceled_and_shows_details(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+    work_date = seeded_booking_data["work_date"]
+
+    active_appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=work_date,
+            start_time=seeded_booking_data["schedule"].start_time,
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+    canceled_appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=work_date,
+            start_time=seeded_booking_data["schedule"].start_time.replace(hour=14),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+    cancel_appointment(
+        db_session,
+        appointment=canceled_appointment,
+        actor_role=ActorRole.CLIENT,
+        reason="Canceled from VK bot",
+    )
+
+    response = handle_vk_event(
+        db_session,
+        VkEvent.model_validate(
+            {"type": "message_new", "object": {"message": {"from_id": client.vk_user_id, "text": "мои записи"}}}
+        ),
+        "confirm-token",
+    )
+
+    assert isinstance(response, VkBotResponse)
+    assert "Ваши активные записи" in response.reply_text
+    assert f"№{active_appointment.id}" in response.reply_text
+    assert service.name in response.reply_text
+    assert seeded_booking_data["master"].full_name in response.reply_text
+    assert f"№{canceled_appointment.id}" not in response.reply_text
 
 
 def test_vk_antispam_warns_and_then_silences_repeated_messages(monkeypatch, db_session) -> None:

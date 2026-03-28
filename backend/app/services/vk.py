@@ -60,6 +60,21 @@ def _appointment_short_label(appointment: Appointment) -> str:
     )
 
 
+def _appointment_details_label(db: Session, appointment: Appointment) -> str:
+    service = db.get(Service, appointment.service_id)
+    master = db.get(Master, appointment.master_id)
+    service_name = service.name if service else "Услуга не указана"
+    master_name = master.full_name if master else "Мастер не назначен"
+    return "\n".join(
+        [
+            f"№{appointment.id} • {service_name}",
+            f"Мастер: {master_name}",
+            f"Дата: {appointment.appointment_date.strftime('%d.%m.%Y')} в {appointment.start_time.strftime('%H:%M')}",
+            f"Статус: {_appointment_status_label(appointment.status)}",
+        ]
+    )
+
+
 def _button_color(label: str) -> str:
     if label == "Записаться":
         return "primary"
@@ -313,16 +328,12 @@ def _format_masters(db: Session) -> str:
 
 
 def _format_appointments(db: Session, client_id: int) -> str:
-    appointments = db.scalars(
-        select(Appointment)
-        .where(Appointment.client_id == client_id)
-        .order_by(Appointment.appointment_date.desc(), Appointment.start_time.desc())
-    ).all()
+    appointments = _active_appointments(db, client_id)
     if not appointments:
-        return "У вас пока нет записей."
-    return "Ваши записи:\n" + "\n".join(
-        f"- {_appointment_short_label(appointment)} ({_appointment_status_label(appointment.status)})"
-        for appointment in appointments[:10]
+        return "У вас нет активных записей."
+    return "Ваши активные записи:\n\n" + "\n\n".join(
+        _appointment_details_label(db, appointment)
+        for appointment in appointments[:6]
     )
 
 
