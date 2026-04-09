@@ -76,6 +76,10 @@ function monthKey(dateValue: Date) {
   return `${year}-${month}`;
 }
 
+function isConfirmedAppointment(appointment: Appointment) {
+  return appointment.status === "confirmed";
+}
+
 export default function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
   const [loading, setLoading] = useState(api.hasSession());
@@ -382,7 +386,7 @@ export default function App() {
   const activeManageableAppointments = snapshot.appointments.filter(
     (item) => !["canceled_by_client", "canceled_by_admin"].includes(item.status)
   );
-  const overviewAppointments = activeManageableAppointments.slice(0, 8);
+  const overviewAppointments = snapshot.appointments.filter(isConfirmedAppointment).slice(0, 8);
   const recentAppointments = snapshot.appointments.slice(0, 8);
   const recentClients = snapshot.clients;
   const calendarAppointments = snapshot.appointments.filter(
@@ -607,8 +611,8 @@ export default function App() {
               <table>
                 <thead><tr><th>Дата</th><th>Клиент</th><th>Услуга</th><th>Мастер</th><th>Статус</th><th>Действие</th></tr></thead>
                 <tbody>{recentAppointments.map((appointment) => {
-                  const isCanceled = ["canceled_by_client", "canceled_by_admin"].includes(appointment.status);
-                  return <tr key={appointment.id}><td>{formatDateTime(appointment.appointment_date, appointment.start_time)}</td><td>{clientLabel(appointment)}</td><td>{serviceName(appointment.service_id)}</td><td>{masterName(appointment.master_id)}</td><td><span className={`status-chip status-${appointment.status}`}>{appointmentStatusLabel(appointment.status)}</span></td><td>{isCanceled ? <span className="muted-action">Недоступно</span> : <button className="button subtle" onClick={() => void runAction(() => api.cancelAppointment(appointment.id, { actor_role: "admin", reason: "Отменено из админ-панели" }), `Запись №${appointment.id} отменена.`)}>Отменить</button>}</td></tr>;
+                  const canCancel = isConfirmedAppointment(appointment);
+                  return <tr key={appointment.id}><td>{formatDateTime(appointment.appointment_date, appointment.start_time)}</td><td>{clientLabel(appointment)}</td><td>{serviceName(appointment.service_id)}</td><td>{masterName(appointment.master_id)}</td><td><span className={`status-chip status-${appointment.status}`}>{appointmentStatusLabel(appointment.status)}</span></td><td>{canCancel ? <button className="button subtle" onClick={() => void runAction(() => api.cancelAppointment(appointment.id, { actor_role: "admin", reason: "Отменено из админ-панели" }), `Запись №${appointment.id} отменена.`)}>Отменить</button> : <span className="muted-action">Недоступно</span>}</td></tr>;
                 })}</tbody>
               </table>
             </div>
@@ -664,7 +668,7 @@ export default function App() {
               }}>
                 <h3>Статус</h3>
                 <label className="full-width"><span>Выбранная запись</span><div className="slot-preview">{selectedAppointment ? <p>№{selectedAppointment.id} · {clientLabel(selectedAppointment)} · {serviceName(selectedAppointment.service_id)} · {formatDateTime(selectedAppointment.appointment_date, selectedAppointment.start_time)}</p> : <p>Запись пока не выбрана.</p>}</div></label>
-                <label><span>Новый статус</span><select value={manageForm.status} onChange={(event) => setManageForm((current) => ({ ...current, status: event.target.value }))}><option value="confirmed">Подтверждена</option><option value="completed">Завершена</option><option value="no_show">Неявка</option><option value="canceled_by_admin">Отменена салоном</option></select></label>
+                <label><span>Новый статус</span><select value={manageForm.status} onChange={(event) => setManageForm((current) => ({ ...current, status: event.target.value }))}><option value="confirmed">Подтверждена</option><option value="completed">Завершена</option><option value="no_show">Неявка</option>{selectedAppointment && isConfirmedAppointment(selectedAppointment) ? <option value="canceled_by_admin">Отменена салоном</option> : null}</select></label>
                 <label className="full-width"><span>Комментарий</span><input value={manageForm.comment} onChange={(event) => setManageForm((current) => ({ ...current, comment: event.target.value }))} /></label>
                 <button className="button primary full-width" type="submit">Обновить статус</button>
               </form>

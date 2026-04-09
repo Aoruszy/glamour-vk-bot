@@ -271,6 +271,12 @@ def cancel_appointment(
     if appointment.status in CANCELED_STATUSES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Запись уже отменена.")
 
+    if appointment.status != AppointmentStatus.CONFIRMED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Отменить можно только подтвержденную запись.",
+        )
+
     appointment.status = (
         AppointmentStatus.CANCELED_BY_ADMIN if actor_role == ActorRole.ADMIN else AppointmentStatus.CANCELED_BY_CLIENT
     )

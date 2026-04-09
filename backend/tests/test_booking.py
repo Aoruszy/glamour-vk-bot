@@ -437,6 +437,39 @@ def test_cancel_appointment_clears_pending_reminders(db_session, seeded_booking_
     assert any(notification.type == NotificationType.CANCELLATION for notification in notifications)
 
 
+def test_cancel_appointment_rejects_non_confirmed_status(db_session, seeded_booking_data) -> None:
+    client = seeded_booking_data["client"]
+    service = seeded_booking_data["service"]
+
+    appointment = create_appointment(
+        db_session,
+        AppointmentCreate(
+            client_id=client.id,
+            service_id=service.id,
+            appointment_date=seeded_booking_data["work_date"],
+            start_time=time(10, 0),
+            created_by=ActorRole.ADMIN,
+        ),
+    )
+
+    update_appointment_status(
+        db_session,
+        appointment=appointment,
+        payload=AppointmentStatusUpdate(status="completed", actor_role=ActorRole.ADMIN),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        cancel_appointment(
+            db_session,
+            appointment=appointment,
+            actor_role=ActorRole.ADMIN,
+            reason="Canceled by admin",
+        )
+
+    assert caught.value.status_code == 400
+    assert "подтвержден" in str(caught.value.detail).lower()
+
+
 def test_delete_service_rejects_service_used_in_appointments(db_session, seeded_booking_data) -> None:
     client = seeded_booking_data["client"]
     service = seeded_booking_data["service"]
