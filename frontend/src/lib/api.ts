@@ -224,6 +224,24 @@ export const api = {
       body: JSON.stringify(payload)
     });
   },
+  updateSchedule(
+    scheduleId: number,
+    payload: {
+      start_time?: string;
+      end_time?: string;
+      is_working_day?: boolean;
+    }
+  ) {
+    return request<Schedule>(`/schedules/${scheduleId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload)
+    });
+  },
+  deleteSchedule(scheduleId: number) {
+    return request<void>(`/schedules/${scheduleId}`, {
+      method: "DELETE"
+    });
+  },
   listAppointments() {
     return request<Appointment[]>("/appointments");
   },

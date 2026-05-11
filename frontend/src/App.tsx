@@ -9,6 +9,7 @@ import type {
   AvailabilityGroup,
   Client,
   Master,
+  Schedule,
   Service,
   ServiceCategory,
   StatsSummary
@@ -20,15 +21,17 @@ type Snapshot = {
   categories: ServiceCategory[];
   services: Service[];
   masters: Master[];
+  schedules: Schedule[];
   appointments: Appointment[];
 };
 
-type SectionId = "overview" | "appointments" | "catalog" | "clients" | "calendar";
+type SectionId = "overview" | "appointments" | "catalog" | "schedules" | "clients" | "calendar";
 
 const SECTIONS: Array<{ id: SectionId; label: string; note: string }> = [
   { id: "overview", label: "Обзор", note: "Ключевые цифры и недавние события" },
   { id: "appointments", label: "Записи", note: "Создание, перенос и статусы" },
   { id: "catalog", label: "Каталог", note: "Категории, услуги и мастера" },
+  { id: "schedules", label: "Графики", note: "Рабочие окна мастеров по датам" },
   { id: "clients", label: "Клиенты", note: "База клиентов из VK" },
   { id: "calendar", label: "Календарь", note: "Записи по дням и времени" }
 ];
@@ -48,6 +51,7 @@ function emptySnapshot(): Snapshot {
     categories: [],
     services: [],
     masters: [],
+    schedules: [],
     appointments: []
   };
 }
@@ -97,6 +101,7 @@ export default function App() {
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
   const [editingServiceId, setEditingServiceId] = useState<number | null>(null);
   const [editingMasterId, setEditingMasterId] = useState<number | null>(null);
+  const [editingScheduleId, setEditingScheduleId] = useState<number | null>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => monthKey(new Date()));
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [categoryForm, setCategoryForm] = useState({ name: "", description: "" });
@@ -130,6 +135,22 @@ export default function App() {
     master_id: "",
     status: "confirmed",
     comment: ""
+  });
+  const [scheduleForm, setScheduleForm] = useState({
+    master_id: "",
+    work_date: new Date().toISOString().slice(0, 10),
+    start_time: "10:00:00",
+    end_time: "18:00:00",
+    is_working_day: true
+  });
+  const [bulkScheduleForm, setBulkScheduleForm] = useState({
+    master_id: "",
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    start_time: "10:00:00",
+    end_time: "18:00:00",
+    weekdays: [1, 2, 3, 4, 5] as number[],
+    is_working_day: true
   });
 
   useEffect(() => {
@@ -292,15 +313,16 @@ export default function App() {
     }
     setError("");
     try {
-      const [stats, clients, categories, services, masters, appointments] = await Promise.all([
+      const [stats, clients, categories, services, masters, schedules, appointments] = await Promise.all([
         api.getStats(monthBounds().start, monthBounds().end),
         api.listClients(),
         api.listCategories(),
         api.listServices(),
         api.listMasters(),
+        api.listSchedules(),
         api.listAppointments()
       ]);
-      setSnapshot({ stats, clients, categories, services, masters, appointments });
+      setSnapshot({ stats, clients, categories, services, masters, schedules, appointments });
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.status === 401) {
         handleLogout();
@@ -392,16 +414,22 @@ export default function App() {
   const calendarAppointments = snapshot.appointments.filter(
     (item) => !["canceled_by_client", "canceled_by_admin"].includes(item.status)
   );
+  const todayIso = new Date().toISOString().slice(0, 10);
   const appointmentMasters = appointmentForm.service_id
     ? snapshot.masters.filter((master) => master.service_ids.includes(Number(appointmentForm.service_id)))
     : snapshot.masters;
   const masterCategoryServices = masterForm.category_id
     ? snapshot.services.filter((service) => service.category_id === Number(masterForm.category_id))
     : [];
+  const sortedSchedules = [...snapshot.schedules].sort((left, right) => {
+    const leftValue = `${left.work_date}T${left.start_time}`;
+    const rightValue = `${right.work_date}T${right.start_time}`;
+    return leftValue.localeCompare(rightValue);
+  });
+  const upcomingSchedules = sortedSchedules.filter((schedule) => schedule.work_date >= todayIso);
   const rescheduleMasters = selectedAppointment
     ? snapshot.masters.filter((master) => master.service_ids.includes(selectedAppointment.service_id))
     : snapshot.masters;
-  const todayIso = new Date().toISOString().slice(0, 10);
   const sortedAppointments = [...calendarAppointments].sort((left, right) => {
     const leftValue = `${left.appointment_date}T${left.start_time}`;
     const rightValue = `${right.appointment_date}T${right.start_time}`;
@@ -463,6 +491,37 @@ export default function App() {
     });
     setEditingMasterId(null);
   };
+  const resetScheduleForm = () => {
+    setScheduleForm({
+      master_id: "",
+      work_date: todayIso,
+      start_time: "10:00:00",
+      end_time: "18:00:00",
+      is_working_day: true
+    });
+    setEditingScheduleId(null);
+  };
+  const resetBulkScheduleForm = () => {
+    setBulkScheduleForm({
+      master_id: "",
+      start_date: todayIso,
+      end_date: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      start_time: "10:00:00",
+      end_time: "18:00:00",
+      weekdays: [1, 2, 3, 4, 5],
+      is_working_day: true
+    });
+  };
+
+  const weekdayOptions = [
+    { value: 1, label: "Пн" },
+    { value: 2, label: "Вт" },
+    { value: 3, label: "Ср" },
+    { value: 4, label: "Чт" },
+    { value: 5, label: "Пт" },
+    { value: 6, label: "Сб" },
+    { value: 0, label: "Вс" }
+  ];
 
   if (!isAuthenticated) {
     return (
@@ -864,6 +923,384 @@ export default function App() {
                   {editingMasterId !== null ? <button className="button ghost full-width" type="button" onClick={resetMasterForm}>Отменить редактирование</button> : null}
                   {editingMasterId !== null ? <button className="button subtle full-width" type="button" onClick={() => void runDeleteAction(() => api.deleteMaster(editingMasterId), `Удалить мастера «${masterForm.full_name || "без имени"}»?`, "Мастер удален.", resetMasterForm)}>Удалить мастера</button> : null}
                   <button className="button primary full-width" type="submit">{editingMasterId !== null ? "Сохранить мастера" : "Добавить мастера"}</button>
+                </form>
+              </div>
+            </div>
+          </SectionPanel>
+        </div>
+      ) : null}
+
+      {activeSection === "schedules" ? (
+        <div className="dashboard-grid">
+          <SectionPanel title="Графики мастеров" subtitle="Задайте рабочие окна по датам, чтобы бот и админка могли предлагать свободные слоты.">
+            <div className="two-column">
+              <form
+                className="form-grid compact"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (!scheduleForm.master_id) {
+                    setError("Выберите мастера для графика.");
+                    return;
+                  }
+                  if (scheduleForm.start_time >= scheduleForm.end_time) {
+                    setError("Время начала должно быть раньше времени окончания.");
+                    return;
+                  }
+                  void runAction(
+                    () =>
+                      editingScheduleId !== null
+                        ? api.updateSchedule(editingScheduleId, {
+                            start_time: scheduleForm.start_time,
+                            end_time: scheduleForm.end_time,
+                            is_working_day: scheduleForm.is_working_day
+                          })
+                        : api.createSchedule({
+                            master_id: Number(scheduleForm.master_id),
+                            work_date: scheduleForm.work_date,
+                            start_time: scheduleForm.start_time,
+                            end_time: scheduleForm.end_time,
+                            is_working_day: scheduleForm.is_working_day
+                          }),
+                    editingScheduleId !== null ? "График обновлен." : "График добавлен."
+                  ).then(() => resetScheduleForm());
+                }}
+              >
+                <h3>{editingScheduleId !== null ? "Редактирование графика" : "Новый график"}</h3>
+                <label className="full-width">
+                  <span>Существующий график</span>
+                  <select
+                    value={editingScheduleId ?? ""}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (!value) {
+                        resetScheduleForm();
+                        return;
+                      }
+                      const schedule = snapshot.schedules.find((item) => item.id === Number(value));
+                      if (!schedule) {
+                        return;
+                      }
+                      setEditingScheduleId(schedule.id);
+                      setScheduleForm({
+                        master_id: String(schedule.master_id),
+                        work_date: schedule.work_date,
+                        start_time: schedule.start_time,
+                        end_time: schedule.end_time,
+                        is_working_day: schedule.is_working_day
+                      });
+                    }}
+                  >
+                    <option value="">Создать новый график</option>
+                    {upcomingSchedules.map((schedule) => (
+                      <option key={schedule.id} value={schedule.id}>
+                        {masterName(schedule.master_id)} · {schedule.work_date} · {schedule.start_time.slice(0, 5)}–{schedule.end_time.slice(0, 5)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Мастер</span>
+                  <select
+                    value={scheduleForm.master_id}
+                    onChange={(event) => setScheduleForm((current) => ({ ...current, master_id: event.target.value }))}
+                    disabled={editingScheduleId !== null}
+                  >
+                    <option value="">Выберите мастера</option>
+                    {snapshot.masters.map((master) => (
+                      <option key={master.id} value={master.id}>
+                        {master.full_name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Дата</span>
+                  <input
+                    type="date"
+                    min={todayIso}
+                    value={scheduleForm.work_date}
+                    onChange={(event) => setScheduleForm((current) => ({ ...current, work_date: event.target.value }))}
+                    disabled={editingScheduleId !== null}
+                  />
+                </label>
+                <label>
+                  <span>Начало</span>
+                  <input
+                    type="time"
+                    value={scheduleForm.start_time.slice(0, 5)}
+                    onChange={(event) =>
+                      setScheduleForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))
+                    }
+                  />
+                </label>
+                <label>
+                  <span>Окончание</span>
+                  <input
+                    type="time"
+                    value={scheduleForm.end_time.slice(0, 5)}
+                    onChange={(event) =>
+                      setScheduleForm((current) => ({ ...current, end_time: `${event.target.value}:00` }))
+                    }
+                  />
+                </label>
+                <label className="full-width">
+                  <span>Статус дня</span>
+                  <select
+                    value={scheduleForm.is_working_day ? "working" : "day-off"}
+                    onChange={(event) =>
+                      setScheduleForm((current) => ({ ...current, is_working_day: event.target.value === "working" }))
+                    }
+                  >
+                    <option value="working">Рабочий день</option>
+                    <option value="day-off">Выходной</option>
+                  </select>
+                </label>
+                {editingScheduleId !== null ? (
+                  <button className="button ghost full-width" type="button" onClick={resetScheduleForm}>
+                    Отменить редактирование
+                  </button>
+                ) : null}
+                {editingScheduleId !== null ? (
+                  <button
+                    className="button subtle full-width"
+                    type="button"
+                    onClick={() =>
+                      void runDeleteAction(
+                        () => api.deleteSchedule(editingScheduleId),
+                        "Удалить выбранный график?",
+                        "График удален.",
+                        resetScheduleForm
+                      )
+                    }
+                  >
+                    Удалить график
+                  </button>
+                ) : null}
+                <button className="button primary full-width" type="submit">
+                  {editingScheduleId !== null ? "Сохранить график" : "Добавить график"}
+                </button>
+              </form>
+
+              <div className="mini-grid">
+                <div className="mini-panel">
+                  <h3>Ближайшие графики</h3>
+                  {upcomingSchedules.length === 0 ? (
+                    <p>Графики пока не заданы. Добавьте рабочее окно для мастера, чтобы появились слоты.</p>
+                  ) : (
+                    <div className="schedule-cards">
+                      {upcomingSchedules.slice(0, 12).map((schedule) => (
+                        <article key={schedule.id} className="schedule-card">
+                          <strong>{masterName(schedule.master_id)}</strong>
+                          <span>{schedule.work_date}</span>
+                          <span>
+                            {schedule.start_time.slice(0, 5)} - {schedule.end_time.slice(0, 5)}
+                          </span>
+                          <span>{schedule.is_working_day ? "Рабочий день" : "Выходной"}</span>
+                          <button
+                            className="button subtle"
+                            type="button"
+                            onClick={() => {
+                              setEditingScheduleId(schedule.id);
+                              setScheduleForm({
+                                master_id: String(schedule.master_id),
+                                work_date: schedule.work_date,
+                                start_time: schedule.start_time,
+                                end_time: schedule.end_time,
+                                is_working_day: schedule.is_working_day
+                              });
+                            }}
+                          >
+                            Редактировать
+                          </button>
+                          <button
+                            className="button ghost"
+                            type="button"
+                            onClick={() =>
+                              void runDeleteAction(
+                                () => api.deleteSchedule(schedule.id),
+                                `Удалить график ${masterName(schedule.master_id)} на ${schedule.work_date}?`,
+                                "График удален."
+                              )
+                            }
+                          >
+                            Удалить
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <form
+                  className="form-grid compact"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!bulkScheduleForm.master_id) {
+                      setError("Выберите мастера для массового создания графиков.");
+                      return;
+                    }
+                    if (bulkScheduleForm.start_date > bulkScheduleForm.end_date) {
+                      setError("Дата начала должна быть раньше или равна дате окончания.");
+                      return;
+                    }
+                    if (bulkScheduleForm.start_time >= bulkScheduleForm.end_time) {
+                      setError("Время начала должно быть раньше времени окончания.");
+                      return;
+                    }
+                    if (bulkScheduleForm.weekdays.length === 0) {
+                      setError("Выберите хотя бы один день недели.");
+                      return;
+                    }
+
+                    const dates: string[] = [];
+                    const cursor = new Date(`${bulkScheduleForm.start_date}T00:00:00`);
+                    const end = new Date(`${bulkScheduleForm.end_date}T00:00:00`);
+                    while (cursor <= end) {
+                      if (bulkScheduleForm.weekdays.includes(cursor.getDay())) {
+                        dates.push(cursor.toISOString().slice(0, 10));
+                      }
+                      cursor.setDate(cursor.getDate() + 1);
+                    }
+
+                    if (dates.length === 0) {
+                      setError("В выбранном диапазоне нет дат с отмеченными днями недели.");
+                      return;
+                    }
+
+                    setError("");
+                    setStatusMessage("");
+                    void (async () => {
+                      try {
+                        const results = await Promise.allSettled(
+                          dates.map((workDate) =>
+                            api.createSchedule({
+                              master_id: Number(bulkScheduleForm.master_id),
+                              work_date: workDate,
+                              start_time: bulkScheduleForm.start_time,
+                              end_time: bulkScheduleForm.end_time,
+                              is_working_day: bulkScheduleForm.is_working_day
+                            })
+                          )
+                        );
+                        const createdCount = results.filter((result) => result.status === "fulfilled").length;
+                        const failedCount = results.length - createdCount;
+                        if (createdCount === 0) {
+                          throw new Error("Не удалось создать графики: вероятно, они уже существуют на выбранные даты.");
+                        }
+                        setStatusMessage(
+                          failedCount > 0
+                            ? `Создано графиков: ${createdCount}. Пропущено дат: ${failedCount}.`
+                            : `Создано графиков: ${createdCount}.`
+                        );
+                        resetBulkScheduleForm();
+                        await refreshAll();
+                      } catch (caughtError) {
+                        if (caughtError instanceof ApiError && caughtError.status === 401) {
+                          handleLogout();
+                          setError("Сессия администратора истекла. Войдите снова.");
+                        } else {
+                          setError(caughtError instanceof Error ? caughtError.message : "Не удалось создать графики.");
+                        }
+                      }
+                    })();
+                  }}
+                >
+                  <h3>Массовое создание</h3>
+                  <label className="full-width">
+                    <span>Мастер</span>
+                    <select
+                      value={bulkScheduleForm.master_id}
+                      onChange={(event) => setBulkScheduleForm((current) => ({ ...current, master_id: event.target.value }))}
+                    >
+                      <option value="">Выберите мастера</option>
+                      {snapshot.masters.map((master) => (
+                        <option key={master.id} value={master.id}>
+                          {master.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>С даты</span>
+                    <input
+                      type="date"
+                      min={todayIso}
+                      value={bulkScheduleForm.start_date}
+                      onChange={(event) => setBulkScheduleForm((current) => ({ ...current, start_date: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>По дату</span>
+                    <input
+                      type="date"
+                      min={bulkScheduleForm.start_date}
+                      value={bulkScheduleForm.end_date}
+                      onChange={(event) => setBulkScheduleForm((current) => ({ ...current, end_date: event.target.value }))}
+                    />
+                  </label>
+                  <label>
+                    <span>Начало</span>
+                    <input
+                      type="time"
+                      value={bulkScheduleForm.start_time.slice(0, 5)}
+                      onChange={(event) =>
+                        setBulkScheduleForm((current) => ({ ...current, start_time: `${event.target.value}:00` }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Окончание</span>
+                    <input
+                      type="time"
+                      value={bulkScheduleForm.end_time.slice(0, 5)}
+                      onChange={(event) =>
+                        setBulkScheduleForm((current) => ({ ...current, end_time: `${event.target.value}:00` }))
+                      }
+                    />
+                  </label>
+                  <label className="full-width">
+                    <span>Статус дней</span>
+                    <select
+                      value={bulkScheduleForm.is_working_day ? "working" : "day-off"}
+                      onChange={(event) =>
+                        setBulkScheduleForm((current) => ({ ...current, is_working_day: event.target.value === "working" }))
+                      }
+                    >
+                      <option value="working">Рабочие дни</option>
+                      <option value="day-off">Выходные дни</option>
+                    </select>
+                  </label>
+                  <div className="full-width weekday-picker">
+                    <span>Дни недели</span>
+                    <div className="weekday-chips">
+                      {weekdayOptions.map((weekday) => {
+                        const active = bulkScheduleForm.weekdays.includes(weekday.value);
+                        return (
+                          <button
+                            key={weekday.value}
+                            type="button"
+                            className={`weekday-chip ${active ? "weekday-chip-active" : ""}`}
+                            onClick={() =>
+                              setBulkScheduleForm((current) => ({
+                                ...current,
+                                weekdays: active
+                                  ? current.weekdays.filter((value) => value !== weekday.value)
+                                  : [...current.weekdays, weekday.value].sort((left, right) => left - right)
+                              }))
+                            }
+                          >
+                            {weekday.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <button className="button ghost full-width" type="button" onClick={resetBulkScheduleForm}>
+                    Сбросить диапазон
+                  </button>
+                  <button className="button primary full-width" type="submit">
+                    Создать графики на диапазон
+                  </button>
                 </form>
               </div>
             </div>

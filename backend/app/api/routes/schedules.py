@@ -62,3 +62,13 @@ def update_schedule(schedule_id: int, payload: ScheduleUpdate, db: Session = Dep
     db.commit()
     db.refresh(schedule)
     return schedule
+
+
+@router.delete("/{schedule_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_schedule(schedule_id: int, db: Session = Depends(get_db)) -> None:
+    schedule = db.get(Schedule, schedule_id)
+    if not schedule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="График не найден.")
+    db.delete(schedule)
+    log_action(db, user_role=ActorRole.ADMIN, action="schedule_deleted", entity_type="schedule", entity_id=schedule_id)
+    db.commit()
