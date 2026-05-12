@@ -1132,7 +1132,7 @@ export default function App() {
                 </div>
 
                 <form
-                  className="form-grid compact"
+                  className="form-grid compact schedule-bulk-form"
                   onSubmit={(event) => {
                     event.preventDefault();
                     if (!bulkScheduleForm.master_id) {

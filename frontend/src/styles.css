@@ -564,6 +564,10 @@ textarea {
   align-content: start;
 }
 
+.schedule-bulk-form {
+  grid-template-columns: 1fr;
+}
+
 .full-width {
   grid-column: 1 / -1;
 }
